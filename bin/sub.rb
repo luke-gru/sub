@@ -46,7 +46,6 @@ end
 prev_pat = Regexp.new(prev)
 
 stop_subst = false
-last_arg_to_subst = nil
 num_replacements = 0
 
 new_argv.map! do |arg|
@@ -74,7 +73,7 @@ new_argv.compact!
 if flag_last
   last_subst_el = nil
   new_argv.reverse.find { |e| Array === e ? last_subst_el = e : nil }
-  new_argv.map!.with_index do |arg, i|
+  new_argv.map! do |arg|
     case arg
     when String
       arg
