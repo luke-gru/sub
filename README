@@ -1,0 +1,37 @@
+Sub
+===
+
+Description:
+
+It substitutes a command-line with a new commandline by replacing a pattern with another pattern.
+This makes it easy to edit the previous command by doing:
+<CTRL-p>
+<CTRL-a>sub <CTRL-e> -- pat/pat
+
+instead of trying to edit the middle of a long commandline.
+
+Usage:
+
+sub COMMANDLINE -- PATTERN
+
+$ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
+
+This substitutes ex4 with ex5. It will print:
+
+  Executing ld -m elf_i386 ex5.o -o ex5
+
+and it will run it.
+
+To just do a dry run (don't execute the command), it's:
+
+$ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5/d
+
+This will just print the command out.
+
+To just replace the first found value (f flag for first) or last 
+found value (l flag for last):
+
+$ sub ls -al * -- l//l
+
+  Executing ls -ad
+
