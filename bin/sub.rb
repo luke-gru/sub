@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+
 new_argv = []
 sub_str = nil
 
@@ -36,6 +37,7 @@ flag_dryrun = flags.include?('d')
 flag_verbose = flags.include?('v')
 flag_first = flags.include?('f')
 flag_last = flags.include?('l')
+flag_expand_star = flags.include?('e')
 prev.strip!
 new.strip!
 flags.strip!
@@ -51,24 +53,21 @@ num_replacements = 0
 new_argv.map! do |arg|
   if arg =~ prev_pat && !stop_subst
     stop_subst = true if flag_first
-    if new == ''
-      nil # remove it
+    new_arg = arg.sub(prev_pat, new)
+    if flag_verbose && new_arg != arg && !flag_last
+      num_replacements += 1
+    end
+    if new_arg != arg
+      [arg, new_arg]
     else
-      new_arg = arg.sub(prev_pat, new)
-      if flag_verbose && new_arg != arg
-        num_replacements += 1
-      end
-      if new_arg != arg
-        [arg, new_arg]
-      else
-        new_arg
-      end
+      new_arg
     end
   else
     arg
   end
 end
-new_argv.compact!
+
+new_argv.reject! { |arg| Array(arg).last.strip.empty? }
 
 if flag_last
   last_subst_el = nil
@@ -78,7 +77,8 @@ if flag_last
     when String
       arg
     when Array
-      if last_subst_el == arg
+      if last_subst_el.equal?(arg)
+        num_replacements += 1
         arg[1]
       else
         arg[0]
@@ -96,10 +96,25 @@ else
   end
 end
 
+if flag_expand_star
+  new_argv.map! do |arg|
+    if arg == '*'
+      Dir['*'].to_a
+    else
+      arg
+    end
+  end
+  new_argv.flatten!
+end
+
 if flag_verbose
   puts "#{num_replacements} replacement#{'s' if num_replacements != 1}"
 end
 
+if new_argv.empty?
+  puts "Nothing to execute"
+  exit 0
+end
 cmd = new_argv.shift
 suffix = +""
 suffix << " # (dry run)" if flag_dryrun
