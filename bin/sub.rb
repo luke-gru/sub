@@ -15,7 +15,7 @@ def parse_argv_and_sub_str(argv)
       if arg == '--' && i == last_dashdash_idx
         sub_str = argv[i+1]
         if argv[i+2]
-          $stderr.puts "Warning: ignoring everything after pattern: #{argv[i+2..-1].join(' ')}"
+          $stderr.puts "Warning: ignoring everything after the pattern, which is: #{argv[i+2..-1].join(' ')}"
         end
         break
       else
@@ -44,23 +44,25 @@ def parse_sub_str(sub_str)
   new = new.to_s.dup
   flags = flags.to_s.dup
   flags.strip!
-  flag_dryrun = flag flags, 'd'
+  flag_dry_run = flag flags, 'd'
   flag_verbose = flag flags, 'v'
   flag_first = flag flags, 'f'
   flag_last = flag flags, 'l'
   flag_expand_star = flag flags, 'e'
   flag_literal = flag flags, 'L'
   flag_ignorecase = flag flags, 'i'
+  flag_interactive = flag flags, 'I'
   flag_debug = flag flags, 'D'
   flags_hash = {
-    dryrun: flag_dryrun,
+    dry_run: flag_dry_run,
     verbose: flag_verbose,
     first: flag_first,
     last: flag_last,
     expand_star: flag_expand_star,
     literal: flag_literal,
     ignorecase: flag_ignorecase,
-    debug: flag_debug
+    interactive: flag_interactive,
+    debug: flag_debug,
   }
   prev.strip!
   new.strip!
@@ -168,15 +170,26 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
     puts "Nothing to execute"
     exit 0
   end
+
   cmd = new_argv.shift
   suffix = +""
-  suffix << " # (dry run)" if flags.fetch(:dryrun)
+  dry_run = flags.fetch(:dry_run)
+  suffix << " # (dry run)" if dry_run
+  if flags[:interactive] && !dry_run
+    puts "Would you like to execute this command? [y(es),n(o)]"
+    puts "#{cmd} #{new_argv.join(' ')}"
+    ans = $stdin.gets().strip
+    if ans !~ /y(es)?/i
+      exit 0
+    end
+  end
   puts "Executing #{cmd} #{new_argv.join(' ')}#{suffix}"
-  exit 0 if flags.fetch(:dryrun)
+  exit 0 if dry_run
   begin
     exec cmd, *new_argv
   rescue SystemCallError => e
     if e.class == Errno::ENOENT
+      # act like a shell
       $stderr.puts "#{cmd}: command not found"
     else
       $stderr.puts "#{e.class}: #{e.message}"
