@@ -44,24 +44,26 @@ def parse_sub_str(sub_str)
   new = new.to_s.dup
   flags = flags.to_s.dup
   flags.strip!
-  flag_dry_run = flag flags, 'd'
-  flag_verbose = flag flags, 'v'
-  flag_first = flag flags, 'f'
-  flag_last = flag flags, 'l'
+  flag_first_match = flag flags, 'f'
+  flag_last_match = flag flags, 'l'
   flag_expand_star = flag flags, 'e'
   flag_literal = flag flags, 'L'
   flag_ignorecase = flag flags, 'i'
   flag_interactive = flag(flags, 'I') || ARGV.size == 0
+  flag_output_only = flag flags, 'o'
+  flag_copy_to_clipboard = flag flags, 'c'
+  flag_verbose = flag flags, 'v'
   flag_debug = flag flags, 'D'
   flags_hash = {
-    dry_run: flag_dry_run,
-    verbose: flag_verbose,
-    first: flag_first,
-    last: flag_last,
+    first_match: flag_first_match,
+    last_match: flag_last_match,
     expand_star: flag_expand_star,
     literal: flag_literal,
     ignorecase: flag_ignorecase,
     interactive: flag_interactive,
+    output_only: flag_output_only,
+    copy_to_clipboard: flag_copy_to_clipboard,
+    verbose: flag_verbose,
     debug: flag_debug,
   }
   prev.strip!
@@ -99,9 +101,9 @@ def new_argv_replace!(new_argv, prev_pat, new, flags)
 
   new_argv.map! do |arg|
     if arg =~ prev_pat && !stop_subst
-      stop_subst = true if flags.fetch(:first)
+      stop_subst = true if flags.fetch(:first_match)
       new_arg = arg.sub(prev_pat, new)
-      if flags.fetch(:verbose) && new_arg != arg && !flags.fetch(:last)
+      if flags.fetch(:verbose) && new_arg != arg && !flags.fetch(:last_match)
         num_replacements += 1
       end
       if new_arg != arg
@@ -116,7 +118,7 @@ def new_argv_replace!(new_argv, prev_pat, new, flags)
 
   new_argv.reject! { |arg| Array(arg).last.strip.empty? }
 
-  if flags.fetch(:last)
+  if flags.fetch(:last_match)
     last_subst_el = nil
     new_argv.reverse.find { |e| Array === e ? last_subst_el = e : nil }
     new_argv.map! do |arg|
@@ -158,6 +160,41 @@ end
 
 num_replacements = new_argv_replace!(new_argv, prev_pat, new, flags)
 
+def copy!(cmd_line, flags)
+  cmd_line = cmd_line.dup
+  cmd_line << "\n" if cmd_line.empty?
+  if /linux/i =~ RUBY_PLATFORM
+    copy_bin = "xclip"
+    copy_cmd = "xclip -selection clipboard"
+    copy_proc = lambda do |f|
+      system("#{copy_cmd} < #{f.path}", out: "/dev/null")
+    end
+  elsif /darwin/i =~ /RUBY_PLATFORM/
+    copy_bin = "pbcopy"
+    copy_cmd = copy_bin
+    copy_proc = lambda do |f|
+      system("cat #{f.path} | #{copy_cmd}", out: "/dev/null")
+    end
+  else
+    $stderr.puts "Warning: don't know how to get copy command for #{RUBY_PLATFORM}"
+    flags[:output_only] = true
+    return
+  end
+  system("which #{copy_bin}", out: "/dev/null")
+  unless $?.success?
+    $stderr.puts "Warning: can't find #{copy_bin}, please install it and put it in your PATH"
+    flags[:output_only] = true
+    return
+  end
+  require "tempfile"
+  Tempfile.create("sub_cmd") do |f|
+    f.write cmd_line
+    f.flush
+    copy_proc.call(f)
+    puts "Copied" if $?.success?
+  end
+end
+
 def exec_cmd(new_argv, prev_pat, num_replacements, flags)
   if flags.fetch(:debug)
     puts "Pattern: #{prev_pat.inspect}"
@@ -167,26 +204,31 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
   end
 
   if new_argv.empty?
-    puts "Nothing to execute"
+    copy!("", flags) if flags.fetch(:copy_to_clipboard)
+    if flags.fetch(:output_only)
+      puts ""
+    else
+      puts "Nothing to execute"
+    end
     exit 0
   end
 
   cmd = new_argv.shift
-  suffix = +""
-  dry_run = flags.fetch(:dry_run)
-  suffix << " # (dry run)" if dry_run
-  if flags.fetch(:interactive) && !dry_run
-    puts "Would you like to execute the following command? [y(es),n(o)]"
-    puts "#{cmd} #{new_argv.join(' ')}"
+  cmd_line = "#{cmd} #{new_argv.join(' ')}"
+  action = flags.fetch(:copy_to_clipboard) ? "copy" : "execute"
+  if flags.fetch(:interactive) && !flags.fetch(:output_only)
+    puts "Would you like to #{action} the following command? [y(es),n(o)]"
+    puts cmd_line
     ans = $stdin.gets().strip
-    if ans !~ /y(es)?/i
+    if ans !~ /y(es)?/i # treat as no
       exit 0
     end
   end
-  unless flags.fetch(:interactive)
-    puts "Executing #{cmd} #{new_argv.join(' ')}#{suffix}"
+  if flags.fetch(:output_only) || !flags.fetch(:interactive)
+    puts cmd_line
   end
-  exit 0 if dry_run
+  copy!(cmd_line, flags) if flags.fetch(:copy_to_clipboard)
+  exit 0 if flags.fetch(:output_only) || flags.fetch(:copy_to_clipboard)
   begin
     exec cmd, *new_argv
   rescue SystemCallError => e
