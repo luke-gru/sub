@@ -103,7 +103,7 @@ def new_argv_replace!(new_argv, prev_pat, new, flags)
     if arg =~ prev_pat && !stop_subst
       stop_subst = true if flags.fetch(:first_match)
       new_arg = arg.sub(prev_pat, new)
-      if flags.fetch(:verbose) && new_arg != arg && !flags.fetch(:last_match)
+      if flags.fetch(:verbose) && (new_arg != arg || new_arg == new) && !flags.fetch(:last_match)
         num_replacements += 1
       end
       if new_arg != arg
