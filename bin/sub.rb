@@ -51,7 +51,7 @@ def parse_sub_str(sub_str)
   flag_expand_star = flag flags, 'e'
   flag_literal = flag flags, 'L'
   flag_ignorecase = flag flags, 'i'
-  flag_interactive = flag flags, 'I'
+  flag_interactive = flag(flags, 'I') || ARGV.size == 0
   flag_debug = flag flags, 'D'
   flags_hash = {
     dry_run: flag_dry_run,
@@ -77,7 +77,7 @@ end
 prev, new, flags = parse_sub_str(sub_str)
 
 if prev.empty?
-  $stderr.puts "#{$0}: Incorrect pattern, format is: prev_pat/new"
+  $stderr.puts "Incorrect pattern, format is: prev_pat/new"
   exit 1
 end
 
@@ -175,15 +175,17 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
   suffix = +""
   dry_run = flags.fetch(:dry_run)
   suffix << " # (dry run)" if dry_run
-  if flags[:interactive] && !dry_run
-    puts "Would you like to execute this command? [y(es),n(o)]"
+  if flags.fetch(:interactive) && !dry_run
+    puts "Would you like to execute the following command? [y(es),n(o)]"
     puts "#{cmd} #{new_argv.join(' ')}"
     ans = $stdin.gets().strip
     if ans !~ /y(es)?/i
       exit 0
     end
   end
-  puts "Executing #{cmd} #{new_argv.join(' ')}#{suffix}"
+  unless flags.fetch(:interactive)
+    puts "Executing #{cmd} #{new_argv.join(' ')}#{suffix}"
+  end
   exit 0 if dry_run
   begin
     exec cmd, *new_argv
