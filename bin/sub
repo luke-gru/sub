@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # vim: set ft=ruby
 # frozen_string_literal: true
+require "debug"
 
 USAGE = <<EOF
 Usage: sub COMMANDLINE -- PATTERN/SUBSTITUTION[/OPTIONS]
@@ -63,41 +64,42 @@ def print_help
   $stdout.puts output
 end
 
-def parse_argv_and_sub_str(argv)
-  new_argv = []
-  sub_str = nil
+def parse_argv_and_sub_strs(argv)
+  ret_argv = []
+  sub_strs = []
   if argv.size == 0
     require "readline"
     line = Readline.readline "cmd: ", true
-    new_argv.replace line.strip.split(' ')
+    ret_argv.replace line.strip.split(/\s+/)
     line = Readline.readline "sub: ", true
-    sub_str = line.strip
+    sub_strs << line.strip
   else
     last_dashdash_idx = argv.rindex('--')
     argv.each_with_index do |arg, i|
       if arg == '--' && i == last_dashdash_idx
-        sub_str = argv[i+1]
-        if argv[i+2]
-          $stderr.puts "Warning: ignoring everything after the pattern, which is: #{argv[i+2..-1].join(' ')}"
+        j = i+1
+        while sub_str = argv[j]
+          sub_strs << sub_str
+          j += 1
         end
         break
       else
-        new_argv << arg
+        ret_argv << arg
       end
     end
   end
-  if sub_str.nil?
-    cmd = new_argv.shift
+  if sub_strs.empty?
+    cmd = ret_argv.shift
     if cmd == "--help" || cmd == "-h"
       print_help
       exit 0
     end
-    exec cmd, *new_argv
+    exec cmd, *ret_argv
   end
-  [new_argv, sub_str]
+  [ret_argv, sub_strs]
 end
 
-new_argv, sub_str = parse_argv_and_sub_str(ARGV)
+argv, sub_strs = parse_argv_and_sub_strs(ARGV)
 
 def flag(flags_str, char)
   flag = flags_str.include?(char)
@@ -114,127 +116,171 @@ def flag_by_name(name)
   nil
 end
 
-def parse_sub_str(sub_str)
-  prev, new, flags = sub_str.split('/')
-  prev = prev.to_s.dup
-  new = new.to_s.dup
-  flags = flags.to_s.dup
-  flags.strip!
-  flags_hash = {
-    first_match: flag(flags, flag_by_name(:first_match)),
-    last_match: flag(flags, flag_by_name(:last_match)),
-    expand_star: flag(flags, flag_by_name(:expand_star)),
-    literal: flag(flags, flag_by_name(:literal)),
-    ignorecase: flag(flags, flag_by_name(:ignorecase)),
-    general: flag(flags, flag_by_name(:general)),
-    interactive: flag(flags, flag_by_name(:interactive)) || ARGV.size == 0,
-    output_only: flag(flags, flag_by_name(:output_only)),
-    copy_to_clipboard: flag(flags, flag_by_name(:copy_to_clipboard)),
-    verbose: flag(flags, flag_by_name(:verbose)),
-    debug: flag(flags, flag_by_name(:debug)),
+def parse_sub_strs(sub_strs)
+  ret = []
+  pats = []
+  subs = []
+  match_flags = []
+  global_flags = {
+    interactive: nil,
+    output_only: nil,
+    copy_to_clipboard: nil,
+    verbose: nil,
+    debug: nil,
   }
-  prev.strip!
-  new.strip!
+  raw_flags = []
+  sub_strs.each do |sub_str|
+    pat, sub, flags = sub_str.split('/') # FIXME: allow / to be preceded by \ (escaped)
+    pat = pat.to_s.dup
+    sub = sub.to_s.dup
+    pat.strip!
+    sub.strip!
+    flags = flags.to_s.dup
+    flags.strip!
+    raw_flags << flags.dup
+    flags_hash = {
+      first_match: flag(flags, flag_by_name(:first_match)),
+      last_match: flag(flags, flag_by_name(:last_match)),
+      expand_star: flag(flags, flag_by_name(:expand_star)),
+      literal: flag(flags, flag_by_name(:literal)),
+      ignorecase: flag(flags, flag_by_name(:ignorecase)),
+      general: flag(flags, flag_by_name(:general)),
+    }
 
-  unless flags.empty?
-    $stderr.puts "Warning: unknown flag#{'s' if flags.size != 1}: #{flags}"
+    unless global_flags[:interactive]
+      global_flags[:interactive] = flag(flags, flag_by_name(:interactive)) || ARGV.size == 0
+    end
+    unless global_flags[:output_only]
+      global_flags[:output_only] = flag(flags, flag_by_name(:output_only))
+    end
+    unless global_flags[:copy_to_clipboard]
+      global_flags[:copy_to_clipboard] = flag(flags, flag_by_name(:copy_to_clipboard))
+    end
+    unless global_flags[:verbose]
+      global_flags[:verbose] = flag(flags, flag_by_name(:verbose))
+    end
+    unless global_flags[:debug]
+      global_flags[:debug] = flag(flags, flag_by_name(:debug))
+    end
+    unless flags.empty?
+      $stderr.puts "Warning: unknown flag#{'s' if flags.size != 1}: #{flags}"
+    end
+    pats << pat
+    subs << sub
+    match_flags << flags_hash
   end
 
-  [prev, new, flags_hash]
+
+  ret << pats << subs << match_flags << raw_flags << global_flags
 end
 
-prev, new, flags = parse_sub_str(sub_str)
+pats, subs, flags_hashes, raw_flags, global_flags = parse_sub_strs(sub_strs)
 
-if prev.empty? && flags.empty?
-  $stderr.puts "Incorrect substitution, format is: matching_pattern/new_text[/options]"
+if pats.empty? && flags_hashes.empty? && global_flags.empty?
+  $stderr.puts "Incorrect substitution, format is: pattern/substitution[/options]"
   exit 1
 end
 
-def build_regexp(literal, flags)
-  regexp_opts = String.new
-  regexp_opts << 'i' if flags.fetch(:ignorecase)
-  if flags.fetch(:literal)
-    Regexp.new Regexp.escape(literal), regexp_opts
-  else
-    Regexp.new(literal, regexp_opts)
+def build_regexps(pats, flags_hashes)
+  ret = []
+  pats.each_with_index do |pat, idx|
+    flags = flags_hashes[idx]
+    regexp_opts = String.new
+    regexp_opts << 'i' if flags.fetch(:ignorecase)
+    ret << if flags.fetch(:literal)
+      Regexp.new Regexp.escape(pat), regexp_opts
+    else
+      Regexp.new(pat, regexp_opts)
+    end
   end
+  ret
 end
 
-prev_pat = build_regexp(prev, flags)
+regexps = build_regexps(pats, flags_hashes)
 
-def new_argv_replace!(new_argv, prev_pat, new, flags)
-  stop_subst = false
+def argv_replace!(argv, regexps, subs, flags)
+  raise ArgumentError unless [regexps.size, subs.size, flags.size].uniq.size == 1
+  stop_substs = Array.new(regexps.size, false)
   num_replacements = 0
+  ret_argv = []
 
-  new_argv.map! do |arg|
-    if arg =~ prev_pat && !stop_subst
-      stop_subst = true if flags.fetch(:first_match)
-      if flags.fetch(:general)
-        new_arg = arg.gsub(prev_pat, new)
-        scan_size = arg.scan(prev_pat).size
-      else
-        new_arg = arg.sub(prev_pat, new)
-        scan_size = arg.scan(prev_pat).size
-        scan_size = 1 if scan_size > 1
-      end
-      if flags.fetch(:verbose) && (new_arg != arg || new_arg == new) && !flags.fetch(:last_match)
-        num_replacements += scan_size
-      end
-      if new_arg != arg
-        [arg, new_arg]
-      else
-        new_arg
-      end
-    else
-      arg
-    end
-  end
-
-  new_argv.reject! { |arg| Array(arg).last.strip.empty? }
-
-  if flags.fetch(:last_match)
-    last_subst_el = nil
-    new_argv.reverse.find { |e| Array === e ? last_subst_el = e : nil }
-    new_argv.map! do |arg|
-      case arg
-      when String
-        arg
-      when Array
-        if last_subst_el.equal?(arg)
-          num_replacements += 1
-          arg[1]
+  argv.each_with_index do |arg, arg_i|
+    regexps.each_with_index do |regexp, i|
+      next if flags[i].fetch(:last_match)
+      if arg =~ regexp && !stop_substs[i]
+        stop_subst[i] = true if flags[i].fetch(:first_match)
+        if flags[i].fetch(:general)
+          new_arg = arg.gsub(regexp, subs[i])
+          scan_size = arg.scan(regexp).size
         else
-          arg[0]
+          new_arg = arg.sub(regexp, subs[i])
+          scan_size = arg.scan(regexp).size
+          scan_size = 1 if scan_size > 1
         end
-      end
-    end
-  else
-    new_argv.map! do |arg|
-      case arg
-      when String
-        arg
-      when Array
-        arg[1]
-      end
-    end
-  end
-
-  if flags.fetch(:expand_star)
-    new_argv.map! do |arg|
-      if arg == '*' # ls '*' => ls bin README
-        Dir['*'].to_a
+        if new_arg != arg || new_arg == subs[i]
+          num_replacements += scan_size
+        end
+        arg = new_arg
       else
         arg
       end
     end
-    new_argv.flatten!
+    ret_argv << arg
   end
+
+  ret_argv.reject! { |arg| arg.strip.empty? }
+
+  #regexps.each_with_index do |regexp, i|
+    #if flags[i].fetch(:last_match)
+      #ret_argv = ret_argv.reverse.map do |arg|
+      #end.reverse
+    #end
+  #end
+
+  #if flags.fetch(:last_match)
+    #last_subst_el = nil
+    #argv.reverse.find { |e| Array === e ? last_subst_el = e : nil }
+    #argv.map! do |arg|
+      #case arg
+      #when String
+        #arg
+      #when Array
+        #if last_subst_el.equal?(arg)
+          #num_replacements += 1
+          #arg[1]
+        #else
+          #arg[0]
+        #end
+      #end
+    #end
+  #else
+    #argv.map! do |arg|
+      #case arg
+      #when String
+        #arg
+      #when Array
+        #arg[1]
+      #end
+    #end
+  #end
+
+  #if flags.fetch(:expand_star)
+    #ret_argv.map! do |arg|
+      #if arg == '*'
+        #Dir['*'].to_a
+      #else
+        #arg
+      #end
+    #end
+    #ret_argv.flatten!
+  #end
+  argv.replace(ret_argv)
   num_replacements
 end
 
-num_replacements = new_argv_replace!(new_argv, prev_pat, new, flags)
+num_replacements = argv_replace!(argv, regexps, subs, flags_hashes)
 
-def copy!(cmd_line, flags)
+def copy!(cmd_line, global_flags)
   cmd_line = cmd_line.dup
   cmd_line << "\n" if cmd_line.empty?
   if /linux/i =~ RUBY_PLATFORM
@@ -251,13 +297,13 @@ def copy!(cmd_line, flags)
     end
   else
     $stderr.puts "Warning: don't know how to get copy command for #{RUBY_PLATFORM}"
-    flags[:output_only] = true
+    global_flags[:output_only] = true
     return
   end
   system("which #{copy_bin}", out: "/dev/null")
   unless $?.success?
     $stderr.puts "Warning: can't find #{copy_bin}, please install it and put it in your PATH"
-    flags[:output_only] = true
+    global_flags[:output_only] = true
     return
   end
   require "tempfile"
@@ -269,17 +315,19 @@ def copy!(cmd_line, flags)
   end
 end
 
-def exec_cmd(new_argv, prev_pat, num_replacements, flags)
-  if flags.fetch(:debug)
-    puts "Pattern: #{prev_pat.inspect}"
+def exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
+  if global_flags.fetch(:debug)
+    puts "Patterns: #{regexps.inspect}"
+    puts "Substitutions: #{subs.inspect}"
+    puts "Flags: #{raw_flags.inspect}"
   end
-  if flags.fetch(:verbose)
+  if global_flags.fetch(:verbose)
     puts "#{num_replacements} replacement#{'s' if num_replacements != 1}"
   end
 
-  if new_argv.empty?
-    copy!("", flags) if flags.fetch(:copy_to_clipboard)
-    if flags.fetch(:output_only)
+  if argv.empty?
+    copy!("", global_flags) if global_flags.fetch(:copy_to_clipboard)
+    if global_flags.fetch(:output_only)
       puts ""
     else
       puts "Nothing to execute"
@@ -287,10 +335,10 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
     exit 0
   end
 
-  cmd = new_argv.shift
-  cmd_line = "#{cmd} #{new_argv.join(' ')}"
-  action = flags.fetch(:copy_to_clipboard) ? "copy" : "execute"
-  if flags.fetch(:interactive) && !flags.fetch(:output_only)
+  cmd = argv.shift
+  cmd_line = "#{cmd} #{argv.join(' ')}"
+  action = global_flags.fetch(:copy_to_clipboard) ? "copy" : "execute"
+  if global_flags.fetch(:interactive) && !global_flags.fetch(:output_only)
     $stdout.puts "Would you like to #{action} the following command? [y(es),n(o)]"
     $stdout.puts cmd_line
     ans = $stdin.gets().strip
@@ -298,14 +346,14 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
       exit 0
     end
   end
-  if flags.fetch(:output_only) || !flags.fetch(:interactive)
+  if global_flags.fetch(:output_only) || !global_flags.fetch(:interactive)
     $stdout.puts cmd_line
     $stdout.flush
   end
-  copy!(cmd_line, flags) if flags.fetch(:copy_to_clipboard)
-  exit 0 if flags.fetch(:output_only) || flags.fetch(:copy_to_clipboard)
+  copy!(cmd_line, global_flags) if global_flags.fetch(:copy_to_clipboard)
+  exit 0 if global_flags.fetch(:output_only) || global_flags.fetch(:copy_to_clipboard)
   begin
-    exec cmd, *new_argv
+    exec cmd, *argv
   rescue SystemCallError => e
     if e.class == Errno::ENOENT
       # act like a shell
@@ -317,4 +365,4 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
   end
 end
 
-exec_cmd(new_argv, prev_pat, num_replacements, flags)
+exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
