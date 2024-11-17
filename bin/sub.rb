@@ -28,7 +28,6 @@ FLAGS = [
   { flag: 'D', name: :debug, desc: "Set debug mode" },
 ]
 
-# help: usage info
 def print_help
   output = String.new
   FLAGS.each do |fhash|
@@ -135,7 +134,7 @@ if prev.empty? && flags.empty?
 end
 
 def build_regexp(literal, flags)
-  regexp_opts = +''
+  regexp_opts = String.new
   regexp_opts << 'i' if flags.fetch(:ignorecase)
   if flags.fetch(:literal)
     Regexp.new Regexp.escape(literal), regexp_opts
@@ -275,15 +274,16 @@ def exec_cmd(new_argv, prev_pat, num_replacements, flags)
   cmd_line = "#{cmd} #{new_argv.join(' ')}"
   action = flags.fetch(:copy_to_clipboard) ? "copy" : "execute"
   if flags.fetch(:interactive) && !flags.fetch(:output_only)
-    puts "Would you like to #{action} the following command? [y(es),n(o)]"
-    puts cmd_line
+    $stdout.puts "Would you like to #{action} the following command? [y(es),n(o)]"
+    $stdout.puts cmd_line
     ans = $stdin.gets().strip
     if ans !~ /y(es)?/i # treat as no
       exit 0
     end
   end
   if flags.fetch(:output_only) || !flags.fetch(:interactive)
-    puts cmd_line
+    $stdout.puts cmd_line
+    $stdout.flush
   end
   copy!(cmd_line, flags) if flags.fetch(:copy_to_clipboard)
   exit 0 if flags.fetch(:output_only) || flags.fetch(:copy_to_clipboard)
