@@ -10,7 +10,11 @@ sub substitutes the pattern in every word in the command line with the
 substitution if the word matches the pattern. Only the first pattern in
 every word is substituted unless the 'g' option is given. There are various
 options that change the way substitutions are performed or the way matches
-are made.
+are made. Patterns can have regular expression wildcards (special characters)
+in them, and the regular expression engine used is Ruby's.
+
+See [https://docs.ruby-lang.org/en/master/Regexp.html#class-Regexp-label-Special+Characters]
+for more information on the special characters that can be used inside patterns.
 
 Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
     This will output the following, and then execute it:
@@ -18,6 +22,7 @@ Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
 EOF
 
 FLAGS = [
+  # per substitution flags
   { flag: 'f', name: :first_match, desc: "Substitute first matching word only.",
     example: "sub wget https://wget.com -- wget/curl/f #=> curl https://wget.com",
   },
@@ -37,9 +42,10 @@ FLAGS = [
     example: [ "sub ls '*' -- //e #=> ls bin README",
                "sub ls hi -- hi/*/e #=> ls bin README", ]
   },
-  { flag: 'I', name: :interactive, desc: "Set interactive mode, where it shows the command and prompts you" },
+  # global flags
   { flag: 'o', name: :output_only, desc: "Print the command instead of executing it" },
   { flag: 'c', name: :copy_to_clipboard, desc: "Copy the command to clipboard instead of executing it" },
+  { flag: 'I', name: :interactive, desc: "Set interactive mode: shows the command and asks if you want to execute it" },
   { flag: 'v', name: :verbose, desc: "Set verbose mode" },
   { flag: 'D', name: :debug, desc: "Set debug mode" },
 ]
