@@ -6,13 +6,13 @@ Description:
 It substitutes a command-line with a new commandline by replacing a pattern with another pattern.
 This makes it easy to edit the previous command by doing:
 <CTRL-p>
-<CTRL-a>sub <CTRL-e> -- pat/pat
+<CTRL-a>sub <CTRL-e> -- pattern/substitution
 
 instead of trying to edit the middle of a long commandline.
 
 Usage:
 
-sub COMMANDLINE -- PATTERN
+sub COMMANDLINE -- PATTERN/SUBSTITUTION[/OPTIONS]
 
 $ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
 
@@ -22,16 +22,14 @@ This substitutes ex4 with ex5. It will print:
 
 and it will run it.
 
-To just do a dry run (don't execute the command), it's:
+To print the command to stdout instead of executing it:
 
-$ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5/d
+$ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5/o
 
-This will just print the command out.
-
-To just replace the first found value (f flag for first) or last 
+To replace the first found value (f flag for first) or last 
 found value (l flag for last):
 
 $ sub ls -al * -- l//l
 
-  Executing ls -ad
+  Executing ls -a
 
