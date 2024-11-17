@@ -1,4 +1,51 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
+FLAGS = [
+  { flag: 'f', name: :first_match, desc: "Substitute first matching word only.",
+    example: "sub wget https://wget.com -- wget/curl/f #=> curl https://wget.com",
+  },
+  { flag: 'l', name: :last_match, desc: "Substitute last matching word only",
+    example: "sub ls -al -- l//l #=> ls -a",
+  },
+  { flag: 'L', name: :literal, desc: "Interpret wildcards in pattern as literals",
+    example: "sub cp here.txt there.txt -- ./_/L #=> cp here_txt there_txt",
+  },
+  { flag: 'i', name: :ignorecase, desc: "Set pattern to ignore the case of the match",
+    example: "sub cp here.txt there.txt -- CP/mv/i #=> mv here.txt there.txt",
+  },
+  { flag: 'g', name: :general, desc: "General substitution: substitute all matches in every word",
+    example: "sub cp here.txt there.txt -- ./_/g #=> __ ________ _________",
+  },
+  { flag: 'e', name: :expand_star, desc: "Expand star in commandline after replacements are made",
+    example: [ "sub ls '*' -- //e #=> ls bin README",
+               "sub ls hi -- hi/*/e #=> ls bin README", ]
+  },
+  { flag: 'I', name: :interactive, desc: "Set interactive mode, where it shows the command and prompts you" },
+  { flag: 'o', name: :output_only, desc: "Print the command instead of executing it" },
+  { flag: 'c', name: :copy_to_clipboard, desc: "Copy the command to clipboard instead of executing it" },
+  { flag: 'v', name: :verbose, desc: "Set verbose mode" },
+  { flag: 'D', name: :debug, desc: "Set debug mode" },
+]
+
+# help: usage info
+def print_help
+  output = String.new
+  FLAGS.each do |fhash|
+    output << "-#{fhash[:flag]}:\t#{fhash[:desc]}\n"
+    if ex = fhash[:example]
+      case ex
+      when String
+        output << "  \t  ex: #{ex}\n"
+      when Array
+        ex.each do |x|
+          output << "  \t  ex: #{x}\n"
+        end
+      end
+    end
+  end
+  $stdout.puts output
+end
 
 def parse_argv_and_sub_str(argv)
   new_argv = []
@@ -25,6 +72,10 @@ def parse_argv_and_sub_str(argv)
   end
   if sub_str.nil?
     cmd = new_argv.shift
+    if cmd == "--help" || cmd == "-h"
+      print_help
+      exit 0
+    end
     exec cmd, *new_argv
   end
   [new_argv, sub_str]
@@ -38,33 +89,33 @@ def flag(flags_str, char)
   flag
 end
 
+def flag_by_name(name)
+  FLAGS.each do |fhash|
+    if fhash[:name] == name
+      return fhash[:flag]
+    end
+  end
+  nil
+end
+
 def parse_sub_str(sub_str)
   prev, new, flags = sub_str.split('/')
   prev = prev.to_s.dup
   new = new.to_s.dup
   flags = flags.to_s.dup
   flags.strip!
-  flag_first_match = flag flags, 'f'
-  flag_last_match = flag flags, 'l'
-  flag_expand_star = flag flags, 'e'
-  flag_literal = flag flags, 'L'
-  flag_ignorecase = flag flags, 'i'
-  flag_interactive = flag(flags, 'I') || ARGV.size == 0
-  flag_output_only = flag flags, 'o'
-  flag_copy_to_clipboard = flag flags, 'c'
-  flag_verbose = flag flags, 'v'
-  flag_debug = flag flags, 'D'
   flags_hash = {
-    first_match: flag_first_match,
-    last_match: flag_last_match,
-    expand_star: flag_expand_star,
-    literal: flag_literal,
-    ignorecase: flag_ignorecase,
-    interactive: flag_interactive,
-    output_only: flag_output_only,
-    copy_to_clipboard: flag_copy_to_clipboard,
-    verbose: flag_verbose,
-    debug: flag_debug,
+    first_match: flag(flags, flag_by_name(:first_match)),
+    last_match: flag(flags, flag_by_name(:last_match)),
+    expand_star: flag(flags, flag_by_name(:expand_star)),
+    literal: flag(flags, flag_by_name(:literal)),
+    ignorecase: flag(flags, flag_by_name(:ignorecase)),
+    general: flag(flags, flag_by_name(:general)),
+    interactive: flag(flags, flag_by_name(:interactive)) || ARGV.size == 0,
+    output_only: flag(flags, flag_by_name(:output_only)),
+    copy_to_clipboard: flag(flags, flag_by_name(:copy_to_clipboard)),
+    verbose: flag(flags, flag_by_name(:verbose)),
+    debug: flag(flags, flag_by_name(:debug)),
   }
   prev.strip!
   new.strip!
@@ -78,8 +129,8 @@ end
 
 prev, new, flags = parse_sub_str(sub_str)
 
-if prev.empty?
-  $stderr.puts "Incorrect pattern, format is: prev_pat/new"
+if prev.empty? && flags.empty?
+  $stderr.puts "Incorrect substitution, format is: matching_pattern/new_text[/options]"
   exit 1
 end
 
@@ -102,9 +153,16 @@ def new_argv_replace!(new_argv, prev_pat, new, flags)
   new_argv.map! do |arg|
     if arg =~ prev_pat && !stop_subst
       stop_subst = true if flags.fetch(:first_match)
-      new_arg = arg.sub(prev_pat, new)
+      if flags.fetch(:general)
+        new_arg = arg.gsub(prev_pat, new)
+        scan_size = arg.scan(prev_pat).size
+      else
+        new_arg = arg.sub(prev_pat, new)
+        scan_size = arg.scan(prev_pat).size
+        scan_size = 1 if scan_size > 1
+      end
       if flags.fetch(:verbose) && (new_arg != arg || new_arg == new) && !flags.fetch(:last_match)
-        num_replacements += 1
+        num_replacements += scan_size
       end
       if new_arg != arg
         [arg, new_arg]
@@ -147,7 +205,7 @@ def new_argv_replace!(new_argv, prev_pat, new, flags)
 
   if flags.fetch(:expand_star)
     new_argv.map! do |arg|
-      if arg == '*'
+      if arg == '*' # ls '*' => ls bin README
         Dir['*'].to_a
       else
         arg
@@ -169,7 +227,7 @@ def copy!(cmd_line, flags)
     copy_proc = lambda do |f|
       system("#{copy_cmd} < #{f.path}", out: "/dev/null")
     end
-  elsif /darwin/i =~ /RUBY_PLATFORM/
+  elsif /darwin/i =~ RUBY_PLATFORM
     copy_bin = "pbcopy"
     copy_cmd = copy_bin
     copy_proc = lambda do |f|
