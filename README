@@ -3,16 +3,20 @@ Sub
 
 Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
 
-sub substitutes the pattern in every word in the command line with the
-substitution if the word matches the pattern. Only the first pattern in
-every word is substituted unless the 'g' flag is given. There are various
-options that change the way substitutions are performed or the way matches
-are made. Patterns can have regular expression wildcards (special characters)
-in them, and the regular expression engine used is Ruby's. Special characters
-are interpreted as special unless the 'L' flag is given.
+sub substitutes the matching pattern in every word in the command line with the
+substitution. Only the first matched pattern in the word is substituted unless
+the 'g' flag is given. There are various options that change the way substitutions
+are performed or the way matches are made. Patterns can have regular expression
+wildcards (special characters) in them, and the regular expression engine used is
+Ruby's. Special characters are interpreted as special unless the 'L' flag is given.
 
 See [https://docs.ruby-lang.org/en/master/Regexp.html#class-Regexp-label-Special+Characters]
 for more information on the special characters that can be used inside patterns.
+
+The sub utility is useful mainly when editing long commandlines, so you don't have to
+<ctrl-b> and <ctrl-f> (or <left> and <right>) through the commandline to edit it. The
+examples given here don't feature long commandlines for the sake of being brief and
+explanatory.
 
 Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
     This will output the following, and then execute it:
