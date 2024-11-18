@@ -52,8 +52,7 @@ FLAGS = [
 
 def print_help
   output = String.new
-  output << USAGE
-  output << "\n"
+  output << USAGE << "\n"
   FLAGS.each do |fhash|
     output << "-#{fhash[:flag]}:\t#{fhash[:desc]}\n"
     if ex = fhash[:example]
@@ -210,7 +209,7 @@ def argv_replace!(argv, regexps, subs, flags)
   num_replacements = 0
   ret_argv = []
 
-  argv.each_with_index do |arg, arg_i|
+  argv.each_with_index do |arg, _arg_i|
     regexps.each_with_index do |regexp, i|
       next if flags[i].fetch(:last_match)
       if arg =~ regexp && !stop_substs[i]
@@ -223,25 +222,43 @@ def argv_replace!(argv, regexps, subs, flags)
           scan_size = arg.scan(regexp).size
           scan_size = 1 if scan_size > 1
         end
-        if new_arg != arg || new_arg == subs[i]
+        if new_arg != arg# || new_arg == subs[i]
           num_replacements += scan_size
         end
         arg = new_arg
-      else
-        arg
       end
     end
-    ret_argv << arg
+    ret_argv << arg.dup
   end
 
   ret_argv.reject! { |arg| arg.strip.empty? }
 
-  #regexps.each_with_index do |regexp, i|
-    #if flags[i].fetch(:last_match)
-      #ret_argv = ret_argv.reverse.map do |arg|
-      #end.reverse
-    #end
-  #end
+  regexps.each_with_index do |regexp, i|
+    begin
+      if flags[i].fetch(:last_match)
+        ret_argv.reverse_each do |arg|
+          if arg =~ regexp
+            if flags[i].fetch(:general)
+              new_arg = arg.gsub(regexp, subs[i])
+              scan_size = arg.scan(regexp).size
+            else
+              new_arg = arg.sub(regexp, subs[i])
+              scan_size =  arg.scan(regexp).size
+              scan_size = 1 if scan_size > 1
+            end
+            if new_arg != arg
+              num_replacements += scan_size
+              arg.replace(new_arg)
+              raise 'next regexp'
+            end
+          end
+        end
+      end
+    rescue StandardError => e
+      raise unless e.message == 'next regexp'
+      # continue
+    end
+  end
 
   #if flags.fetch(:last_match)
     #last_subst_el = nil
