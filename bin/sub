@@ -2,6 +2,8 @@
 # vim: set ft=ruby
 # frozen_string_literal: true
 
+VERSION = "0.1.0"
+
 USAGE = <<EOF
 Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
 
@@ -42,6 +44,26 @@ Global flags:
   See flags information below.
 EOF
 
+INSTALLATION = <<EOF
+Install:
+\tcd $HOME
+\tgit clone git@github.com:luke-gru/sub.git
+\tcd sub
+\tsudo rake install # creates /usr/local/bin/sub
+\t# or
+\t# INSTALL_PREFIX="/bin" sudo rake install
+EOF
+
+UNINSTALLATION = <<EOF
+Uninstall:
+\tcd $HOME/sub
+\tsudo rake uninstall # removes /usr/local/bin/sub
+\t# or
+\t# INSTALL_PREFIX="/bin" sudo rake uninstall # removes /bin/sub
+EOF
+
+LICENSE = "License: MIT"
+
 FLAGS = [
   # per substitution flags
   { flag: 'f', name: :first_match, desc: "Substitute first matching word only.",
@@ -79,8 +101,9 @@ GLOBAL_FLAGS_MAP = {
 }
 GLOBAL_FLAGS = GLOBAL_FLAGS_MAP.values
 
-def print_help
+def print_help(full: true)
   output = String.new
+  output << "sub v#{VERSION}" << "\n"
   output << USAGE << "\n"
   output << "Flags:\n\n"
   output << "Substitution flags:\n"
@@ -101,7 +124,16 @@ def print_help
       end
     end
   end
+  if full
+    output << "\n" << INSTALLATION
+    output << "\n" << UNINSTALLATION
+    output << "\n" << LICENSE
+  end
   $stdout.puts output
+end
+
+def print_version
+  $stdout.puts VERSION
 end
 
 def parse_argv_and_sub_strs(argv)
@@ -131,7 +163,10 @@ def parse_argv_and_sub_strs(argv)
   if sub_strs.empty?
     cmd = ret_argv.shift
     if cmd == "--help" || cmd == "-h"
-      print_help
+      print_help(full: cmd == "--help")
+      exit 0
+    elsif cmd == "--version" || cmd == "-v"
+      print_version
       exit 0
     end
     exec cmd, *ret_argv
