@@ -109,6 +109,14 @@ class IntegrationTest < Minitest::Test
     assert_match(/ls -alhi\n/, out)
   end
 
+  def test_can_have_space_character_in_substitution
+    # ./bin/sub ls -al -- 'a/ ' /p
+    out, err, code = run_sub(["ls", "-al"], "a/ ", "/p")
+    assert_equal "", err
+    assert_success code
+    assert_match(/ls - l\n/, out)
+  end
+
   private
 
   # FIXME: allow debugger in subprocess
