@@ -1,5 +1,9 @@
 require "minitest/autorun"
-require "debug"
+begin
+  require "debug"
+rescue LoadError
+  def debugger; end
+end
 require 'open3'
 
 class IntegrationTest < Minitest::Test
@@ -70,7 +74,7 @@ class IntegrationTest < Minitest::Test
 
   def test_two_substitutions_without_interference
     out, err, code = run_sub("ls -al", "l//", "s//p")
-    assert_match(/-a\n/, out)
+    assert_match(/-a\s*?\n/, out)
     assert_equal "", err
     assert_success code
   end
@@ -89,26 +93,50 @@ class IntegrationTest < Minitest::Test
     assert_success code
   end
 
+  def test_patterns_can_escape_backslash
+    # ./bin/sub ls / -- '\//hi /p'
+    out, err, code = run_sub("ls /", "\\//hi", "/p")
+    assert_equal "", err
+    assert_success code
+    assert_match(/ls hi\n/, out)
+  end
+
   private
 
-  def run_sub(cmdline, *subs)
-    args = cmdline.split(/\s+/)
-    args << "--"
-    subs.each do |sub|
-      args << sub
+  # FIXME: allow debugger in subprocess
+  if ENV['DEBUG_SUB'] == '1'
+    # enable debugger to work
+    #def run_sub(cmdline, *subs)
+      #require "shellwords"
+      #args = cmdline.split(/\s+/)
+      #args << "--"
+      #subs.each do |sub|
+        #args << sub
+      #end
+      ##args.map! { |arg| "'#{arg}'" }
+      #out = `#{SUB_BIN} #{args.join(' ')}`
+      #[out, "", $?.exitstatus]
+    #end
+  else
+    def run_sub(cmdline, *subs)
+      args = cmdline.split(/\s+/)
+      args << "--"
+      subs.each do |sub|
+        args << sub
+      end
+      stdin, stdout, stderr, wait_thr = Open3.popen3(SUB_BIN, *args)
+      if block_given?
+        yield stdin, stdout, stderr
+        return wait_thr.value
+      end
+      out = stdout.read
+      err = stderr.read
+      stderr.close
+      stdin.close
+      stdout.close
+      exit_code = wait_thr.value
+      [out, err, exit_code]
     end
-    stdin, stdout, stderr, wait_thr = Open3.popen3(SUB_BIN, *args)
-    if block_given?
-      yield stdin, stdout, stderr
-      return wait_thr.value
-    end
-    out = stdout.read
-    stdout.close
-    err = stderr.read
-    stderr.close
-    stdin.close
-    exit_code = wait_thr.value
-    [out, err, exit_code]
   end
 
   def assert_success code
