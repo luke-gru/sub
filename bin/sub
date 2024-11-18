@@ -177,7 +177,7 @@ def parse_sub_strs(sub_strs)
     if sub_strs[sub_i+1].nil? && sub_str[0] == '/' && raw_global_options?(sub_str[1..-1])
       flags = sub_str[1..-1]
     else
-      pat, sub, flags = sub_str.split(/(?<!\\)\//) # FIXME: allow / to be preceded by \ (escaped)
+      pat, sub, flags = sub_str.split(/(?<!\\)\//)
       pat = pat.to_s.dup
       sub = sub.to_s.dup
       pat.strip!
