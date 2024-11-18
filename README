@@ -1,35 +1,58 @@
 Sub
 ===
 
-Description:
+Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
 
-It substitutes a command-line with a new commandline by replacing a pattern with another pattern.
-This makes it easy to edit the previous command by doing:
-<CTRL-p>
-<CTRL-a>sub <CTRL-e> -- pattern/substitution
+sub substitutes the pattern in every word in the command line with the
+substitution if the word matches the pattern. Only the first pattern in
+every word is substituted unless the 'g' flag is given. There are various
+options that change the way substitutions are performed or the way matches
+are made. Patterns can have regular expression wildcards (special characters)
+in them, and the regular expression engine used is Ruby's. Special characters
+are interpreted as special unless the 'L' flag is given.
 
-instead of trying to edit the middle of a long commandline.
+See [https://docs.ruby-lang.org/en/master/Regexp.html#class-Regexp-label-Special+Characters]
+for more information on the special characters that can be used inside patterns.
 
-Usage:
+Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
+    This will output the following, and then execute it:
+    ld -m elf_i386 ex5.o -o ex5
 
-sub COMMANDLINE -- PATTERN/SUBSTITUTION[/OPTIONS]
+Multiple substitutions:
 
-$ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
+  Multiple substitutions can be given as well, such as:
 
-This substitutes ex4 with ex5. It will print:
+  Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5 i386/arm64
+      ld -m elf_arm64 ex5.o -o ex5
 
-  Executing ld -m elf_i386 ex5.o -o ex5
+  If multiple substitutions are given, each subsitution pattern is matched with
+  each word, then the next substitution pattern does the same.
 
-and it will run it.
+Global flags:
+  Global flags can be given as the last argument:
 
-To print the command to stdout instead of executing it:
+  ex: sub find . | grep '.txt' -- txt/md /p
+  In this example, the print flag is given as a final argument.
+  See flags information below.
 
-$ sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5/o
+Flags:
 
-To replace the first found value (f flag for first) or last 
-found value (l flag for last):
-
-$ sub ls -al * -- l//l
-
-  Executing ls -a
-
+Substitution flags:
+-f:	Substitute first matching word only.
+  	  ex: sub wget https://wget.com -- wget/curl/f #=> curl https://wget.com
+-l:	Substitute last matching word only
+  	  ex: sub ls -al -- l//l #=> ls -a
+-L:	Interpret wildcards in pattern as literals
+  	  ex: sub cp here.txt there.txt -- ./_/L #=> cp here_txt there_txt
+-i:	Set pattern to ignore the case of the match
+  	  ex: sub cp here.txt there.txt -- CP/mv/i #=> mv here.txt there.txt
+-g:	General substitution: substitute all matches in the word, not just the first
+  	  ex: sub cp here.txt there.txt -- ./_/g #=> __ ________ _________
+-e:	Expand * in commandline after replacements are made
+  	  ex: sub ls mydir -- mydir/*/e #=> ls bin README
+Global flags:
+-p:	Print the command instead of executing it
+-c:	Copy the command to clipboard instead of executing it
+-I:	Set interactive mode: shows the command and asks if you want to execute it
+-v:	Set verbose mode
+-D:	Set debug mode

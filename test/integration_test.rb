@@ -5,22 +5,22 @@ require 'open3'
 class IntegrationTest < Minitest::Test
   SUB_BIN = "./bin/sub"
 
-  def test_sub_output_only
-    out, err, code = run_sub("ls -al", "l//o")
+  def test_sub_print_only
+    out, err, code = run_sub("ls -al", "l//p")
     assert_equal "s -a\n", out
     assert_equal "", err
     assert_success code
   end
 
   def test_sub_invalid_option_gives_warning
-    out, err, code = run_sub("ls -al", "l//oX")
+    out, err, code = run_sub("ls -al", "l//pX")
     assert_equal "s -a\n", out
-    assert_match /Warning: unknown flag: X\n/, err
+    assert_match(/Warning: unknown flag: X\n/, err)
     assert_success code
   end
 
   def test_sub_repeated_option_gives_no_warning
-    out, err, code = run_sub("ls -al", "l//oo")
+    out, err, code = run_sub("ls -al", "l//pp")
     assert_equal "s -a\n", out
     assert_equal "", err
     assert_success code
@@ -34,7 +34,7 @@ class IntegrationTest < Minitest::Test
   end
 
   def test_sub_first_matching_word_only_f_option
-    out, err, code = run_sub("wget https://wget.com", "wget/curl/fo")
+    out, err, code = run_sub("wget https://wget.com", "wget/curl/fp")
     assert_equal "curl https://wget.com\n", out
     assert_equal "", err
     assert_success code
@@ -48,32 +48,55 @@ class IntegrationTest < Minitest::Test
   end
 
   def test_sub_interpret_wildcards_in_pattern_as_literals_L_option
-    out, err, code = run_sub("cp here.txt there.txt", "./_/Lo")
+    out, err, code = run_sub("cp here.txt there.txt", "./_/Lp")
     assert_match(/cp here_txt there_txt\n/, out)
     assert_equal "", err
     assert_success code
   end
 
   def test_sub_pattern_ignorecase_i_option
-    out, err, code = run_sub("cp here.txt there.txt", "CP/mv/io")
+    out, err, code = run_sub("cp here.txt there.txt", "CP/mv/ip")
     assert_match(/mv here.txt there.txt\n/, out)
     assert_equal "", err
     assert_success code
   end
 
   def test_sub_general_substitution_g_option
-    out, err, code = run_sub("cp here.txt there.txt", "./_/go")
+    out, err, code = run_sub("cp here.txt there.txt", "./_/gp")
     assert_match(/__ ________ _________\n/, out)
+    assert_equal "", err
+    assert_success code
+  end
+
+  def test_two_substitutions_without_interference
+    out, err, code = run_sub("ls -al", "l//", "s//p")
+    assert_match(/-a\n/, out)
+    assert_equal "", err
+    assert_success code
+  end
+
+  def test_multiple_substitutions_run_one_after_another
+    out, err, code = run_sub("ls -al", "l/HI/", "hi/HEY/ip")
+    assert_match(/HEYs -aHEY\n/, out)
+    assert_equal "", err
+    assert_success code
+  end
+
+  def test_global_options_can_be_given_after_substitutions
+    out, err, code = run_sub("ls -al", "l//", "/p")
+    assert_match(/s -a\n/, out)
     assert_equal "", err
     assert_success code
   end
 
   private
 
-  def run_sub(cmdline, sub)
+  def run_sub(cmdline, *subs)
     args = cmdline.split(/\s+/)
     args << "--"
-    args << sub
+    subs.each do |sub|
+      args << sub
+    end
     stdin, stdout, stderr, wait_thr = Open3.popen3(SUB_BIN, *args)
     if block_given?
       yield stdin, stdout, stderr

@@ -1,17 +1,17 @@
 #!/usr/bin/env ruby
 # vim: set ft=ruby
 # frozen_string_literal: true
-require "debug"
 
 USAGE = <<EOF
-Usage: sub COMMANDLINE -- PATTERN/SUBSTITUTION[/OPTIONS]
+Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
 
 sub substitutes the pattern in every word in the command line with the
 substitution if the word matches the pattern. Only the first pattern in
-every word is substituted unless the 'g' option is given. There are various
+every word is substituted unless the 'g' flag is given. There are various
 options that change the way substitutions are performed or the way matches
 are made. Patterns can have regular expression wildcards (special characters)
-in them, and the regular expression engine used is Ruby's.
+in them, and the regular expression engine used is Ruby's. Special characters
+are interpreted as special unless the 'L' flag is given.
 
 See [https://docs.ruby-lang.org/en/master/Regexp.html#class-Regexp-label-Special+Characters]
 for more information on the special characters that can be used inside patterns.
@@ -19,6 +19,23 @@ for more information on the special characters that can be used inside patterns.
 Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5
     This will output the following, and then execute it:
     ld -m elf_i386 ex5.o -o ex5
+
+Multiple substitutions:
+
+  Multiple substitutions can be given as well, such as:
+
+  Ex: sub ld -m elf_i386 ex4.o -o ex4 -- ex4/ex5 i386/arm64
+      ld -m elf_arm64 ex5.o -o ex5
+
+  If multiple substitutions are given, each subsitution pattern is matched with
+  each word, then the next substitution pattern does the same.
+
+Global flags:
+  Global flags can be given as the last argument:
+
+  ex: sub find . | grep '.txt' -- txt/md /p
+  In this example, the print flag is given as a final argument.
+  See flags information below.
 EOF
 
 FLAGS = [
@@ -35,25 +52,39 @@ FLAGS = [
   { flag: 'i', name: :ignorecase, desc: "Set pattern to ignore the case of the match",
     example: "sub cp here.txt there.txt -- CP/mv/i #=> mv here.txt there.txt",
   },
-  { flag: 'g', name: :general, desc: "General substitution: substitute all matches in every word",
+  { flag: 'g', name: :general, desc: "General substitution: substitute all matches in the word, not just the first",
     example: "sub cp here.txt there.txt -- ./_/g #=> __ ________ _________",
   },
-  { flag: 'e', name: :expand_star, desc: "Expand star in commandline after replacements are made",
-    example: [ "sub ls '*' -- //e #=> ls bin README",
-               "sub ls hi -- hi/*/e #=> ls bin README", ]
+  { flag: 'e', name: :expand_star, desc: "Expand * in commandline after replacements are made",
+    example: [ "sub ls mydir -- mydir/*/e #=> ls bin README" ]
   },
+  nil, # separator
   # global flags
-  { flag: 'o', name: :output_only, desc: "Print the command instead of executing it" },
+  { flag: 'p', name: :print_only, desc: "Print the command instead of executing it" },
   { flag: 'c', name: :copy_to_clipboard, desc: "Copy the command to clipboard instead of executing it" },
   { flag: 'I', name: :interactive, desc: "Set interactive mode: shows the command and asks if you want to execute it" },
   { flag: 'v', name: :verbose, desc: "Set verbose mode" },
   { flag: 'D', name: :debug, desc: "Set debug mode" },
 ]
+GLOBAL_FLAGS_MAP = {
+  print_only: 'p',
+  copy_to_clipboard: 'c',
+  interactive: 'I',
+  verbose: 'v',
+  debug: 'D',
+}
+GLOBAL_FLAGS = GLOBAL_FLAGS_MAP.values
 
 def print_help
   output = String.new
   output << USAGE << "\n"
+  output << "Flags:\n\n"
+  output << "Substitution flags:\n"
   FLAGS.each do |fhash|
+    if fhash.nil?
+      output << "Global flags:\n"
+      next
+    end
     output << "-#{fhash[:flag]}:\t#{fhash[:desc]}\n"
     if ex = fhash[:example]
       case ex
@@ -114,11 +145,18 @@ end
 
 def flag_by_name(name)
   FLAGS.each do |fhash|
+    next if fhash.nil?
     if fhash[:name] == name
       return fhash[:flag]
     end
   end
-  nil
+  raise ArgumentError, "bad flag: #{name}"
+end
+
+def raw_global_options?(raw_flags)
+  raw_flags = raw_flags.strip
+  return false if raw_flags.empty?
+  raw_flags.gsub(Regexp.new(GLOBAL_FLAGS.join('|')), '').empty?
 end
 
 def parse_sub_strs(sub_strs)
@@ -128,53 +166,67 @@ def parse_sub_strs(sub_strs)
   match_flags = []
   global_flags = {
     interactive: nil,
-    output_only: nil,
+    print_only: nil,
     copy_to_clipboard: nil,
     verbose: nil,
     debug: nil,
   }
   raw_flags = []
-  sub_strs.each do |sub_str|
-    pat, sub, flags = sub_str.split('/') # FIXME: allow / to be preceded by \ (escaped)
-    pat = pat.to_s.dup
-    sub = sub.to_s.dup
-    pat.strip!
-    sub.strip!
-    flags = flags.to_s.dup
-    flags.strip!
-    raw_flags << flags.dup
-    flags_hash = {
-      first_match: flag(flags, flag_by_name(:first_match)),
-      last_match: flag(flags, flag_by_name(:last_match)),
-      expand_star: flag(flags, flag_by_name(:expand_star)),
-      literal: flag(flags, flag_by_name(:literal)),
-      ignorecase: flag(flags, flag_by_name(:ignorecase)),
-      general: flag(flags, flag_by_name(:general)),
-    }
+  sub_strs.each_with_index do |sub_str, sub_i|
+    # global flags at end of substitutions list, starts with /, ex: /o
+    if sub_strs[sub_i+1].nil? && sub_str[0] == '/' && raw_global_options?(sub_str[1..-1])
+      flags = sub_str[1..-1]
+    else
+      pat, sub, flags = sub_str.split('/') # FIXME: allow / to be preceded by \ (escaped)
+      pat = pat.to_s.dup
+      sub = sub.to_s.dup
+      pat.strip!
+      sub.strip!
+      flags = flags.to_s.dup
+      flags.strip!
+      raw_flags << flags.dup
+      flags_hash = {
+        first_match: flag(flags, flag_by_name(:first_match)),
+        last_match: flag(flags, flag_by_name(:last_match)),
+        expand_star: flag(flags, flag_by_name(:expand_star)),
+        literal: flag(flags, flag_by_name(:literal)),
+        ignorecase: flag(flags, flag_by_name(:ignorecase)),
+        general: flag(flags, flag_by_name(:general)),
+      }
+      pats << pat
+      subs << sub
+      match_flags << flags_hash
+    end
 
-    unless global_flags[:interactive]
+    if global_flags[:interactive]
+      flags.delete!(GLOBAL_FLAGS_MAP[:interactive])
+    else
       global_flags[:interactive] = flag(flags, flag_by_name(:interactive)) || ARGV.size == 0
     end
-    unless global_flags[:output_only]
-      global_flags[:output_only] = flag(flags, flag_by_name(:output_only))
+    if global_flags[:print_only]
+      flags.delete!(GLOBAL_FLAGS_MAP[:print_only])
+    else
+      global_flags[:print_only] = flag(flags, flag_by_name(:print_only))
     end
-    unless global_flags[:copy_to_clipboard]
+    if global_flags[:copy_to_clipboard]
+      flags.delete!(GLOBAL_FLAGS_MAP[:copy_to_clipboard])
+    else
       global_flags[:copy_to_clipboard] = flag(flags, flag_by_name(:copy_to_clipboard))
     end
-    unless global_flags[:verbose]
+    if global_flags[:verbose]
+      flags.delete!(GLOBAL_FLAGS_MAP[:verbose])
+    else
       global_flags[:verbose] = flag(flags, flag_by_name(:verbose))
     end
-    unless global_flags[:debug]
+    if global_flags[:debug]
+      flags.delete!(GLOBAL_FLAGS_MAP[:debug])
+    else
       global_flags[:debug] = flag(flags, flag_by_name(:debug))
     end
     unless flags.empty?
       $stderr.puts "Warning: unknown flag#{'s' if flags.size != 1}: #{flags}"
     end
-    pats << pat
-    subs << sub
-    match_flags << flags_hash
   end
-
 
   ret << pats << subs << match_flags << raw_flags << global_flags
 end
@@ -203,101 +255,41 @@ end
 
 regexps = build_regexps(pats, flags_hashes)
 
+NextRegexpIteration = Class.new(StopIteration)
+
 def argv_replace!(argv, regexps, subs, flags)
   raise ArgumentError unless [regexps.size, subs.size, flags.size].uniq.size == 1
-  stop_substs = Array.new(regexps.size, false)
   num_replacements = 0
-  ret_argv = []
 
-  argv.each_with_index do |arg, _arg_i|
-    regexps.each_with_index do |regexp, i|
-      next if flags[i].fetch(:last_match)
-      if arg =~ regexp && !stop_substs[i]
-        stop_subst[i] = true if flags[i].fetch(:first_match)
-        if flags[i].fetch(:general)
-          new_arg = arg.gsub(regexp, subs[i])
-          scan_size = arg.scan(regexp).size
-        else
-          new_arg = arg.sub(regexp, subs[i])
-          scan_size = arg.scan(regexp).size
-          scan_size = 1 if scan_size > 1
-        end
-        if new_arg != arg# || new_arg == subs[i]
-          num_replacements += scan_size
-        end
-        arg = new_arg
-      end
-    end
-    ret_argv << arg.dup
-  end
-
-  ret_argv.reject! { |arg| arg.strip.empty? }
+  argv.map! { |arg| arg.frozen? ? arg.dup : arg } # make sure they're mutable
 
   regexps.each_with_index do |regexp, i|
     begin
-      if flags[i].fetch(:last_match)
-        ret_argv.reverse_each do |arg|
-          if arg =~ regexp
-            if flags[i].fetch(:general)
-              new_arg = arg.gsub(regexp, subs[i])
-              scan_size = arg.scan(regexp).size
-            else
-              new_arg = arg.sub(regexp, subs[i])
-              scan_size =  arg.scan(regexp).size
-              scan_size = 1 if scan_size > 1
-            end
-            if new_arg != arg
-              num_replacements += scan_size
-              arg.replace(new_arg)
-              raise 'next regexp'
-            end
+      iter_method = flags[i].fetch(:last_match) ? :reverse_each : :each
+      argv.send(iter_method) do |arg|
+        if arg =~ regexp
+          if flags[i].fetch(:general)
+            new_arg = arg.gsub(regexp, subs[i])
+            scan_size = arg.scan(regexp).size
+          else
+            new_arg = arg.sub(regexp, subs[i])
+            scan_size = arg.scan(regexp).size
+            scan_size = 1 if scan_size > 1
+          end
+          if new_arg != arg || new_arg == subs[i]
+            num_replacements += scan_size
+          end
+          arg.replace(new_arg)
+          if flags[i].fetch(:first_match) || flags[i].fetch(:last_match)
+            raise NextRegexpIteration
           end
         end
       end
-    rescue StandardError => e
-      raise unless e.message == 'next regexp'
+    rescue NextRegexpIteration
       # continue
     end
   end
 
-  #if flags.fetch(:last_match)
-    #last_subst_el = nil
-    #argv.reverse.find { |e| Array === e ? last_subst_el = e : nil }
-    #argv.map! do |arg|
-      #case arg
-      #when String
-        #arg
-      #when Array
-        #if last_subst_el.equal?(arg)
-          #num_replacements += 1
-          #arg[1]
-        #else
-          #arg[0]
-        #end
-      #end
-    #end
-  #else
-    #argv.map! do |arg|
-      #case arg
-      #when String
-        #arg
-      #when Array
-        #arg[1]
-      #end
-    #end
-  #end
-
-  #if flags.fetch(:expand_star)
-    #ret_argv.map! do |arg|
-      #if arg == '*'
-        #Dir['*'].to_a
-      #else
-        #arg
-      #end
-    #end
-    #ret_argv.flatten!
-  #end
-  argv.replace(ret_argv)
   num_replacements
 end
 
@@ -320,13 +312,13 @@ def copy!(cmd_line, global_flags)
     end
   else
     $stderr.puts "Warning: don't know how to get copy command for #{RUBY_PLATFORM}"
-    global_flags[:output_only] = true
+    global_flags[:print_only] = true
     return
   end
   system("which #{copy_bin}", out: "/dev/null")
   unless $?.success?
     $stderr.puts "Warning: can't find #{copy_bin}, please install it and put it in your PATH"
-    global_flags[:output_only] = true
+    global_flags[:print_only] = true
     return
   end
   require "tempfile"
@@ -350,7 +342,7 @@ def exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
 
   if argv.empty?
     copy!("", global_flags) if global_flags.fetch(:copy_to_clipboard)
-    if global_flags.fetch(:output_only)
+    if global_flags.fetch(:print_only)
       puts ""
     else
       puts "Nothing to execute"
@@ -361,20 +353,20 @@ def exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
   cmd = argv.shift
   cmd_line = "#{cmd} #{argv.join(' ')}"
   action = global_flags.fetch(:copy_to_clipboard) ? "copy" : "execute"
-  if global_flags.fetch(:interactive) && !global_flags.fetch(:output_only)
+  if global_flags.fetch(:interactive) && !global_flags.fetch(:print_only)
     $stdout.puts "Would you like to #{action} the following command? [y(es),n(o)]"
     $stdout.puts cmd_line
     ans = $stdin.gets().strip
     if ans !~ /y(es)?/i # treat as no
-      exit 0
+      exit 1
     end
   end
-  if global_flags.fetch(:output_only) || !global_flags.fetch(:interactive)
+  if global_flags.fetch(:print_only) || !global_flags.fetch(:interactive)
     $stdout.puts cmd_line
     $stdout.flush
   end
   copy!(cmd_line, global_flags) if global_flags.fetch(:copy_to_clipboard)
-  exit 0 if global_flags.fetch(:output_only) || global_flags.fetch(:copy_to_clipboard)
+  exit 0 if global_flags.fetch(:print_only) || global_flags.fetch(:copy_to_clipboard)
   begin
     exec cmd, *argv
   rescue SystemCallError => e
