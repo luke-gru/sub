@@ -16,6 +16,13 @@ class IntegrationTest < Minitest::Test
     assert_success code
   end
 
+  def test_sub_print_only_no_newline
+    out, err, code = run_sub(["ls", "-al"], "l//P")
+    assert_equal "s -a", out
+    assert_equal "", err
+    assert_success code
+  end
+
   def test_sub_invalid_option_gives_warning
     out, err, code = run_sub(["ls", "-al"], "l//pX")
     assert_equal "s -a\n", out

@@ -1,7 +1,7 @@
 Sub
 ===
 
-sub v0.1.0
+sub v0.1.1
 Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
 
 sub substitutes the matching pattern in every word in the command line with the
@@ -56,13 +56,16 @@ Substitution flags:
 -e:	Expand * in commandline after replacements are made
   	  ex: sub ls mydir -- mydir/*/e #=> ls bin README
 Global flags:
--p:	Print the command instead of executing it
+-p:	Print the command instead of executing it (adds newline)
+-P:	Print the command instead of executing it (doesn't add newline)
 -c:	Copy the command to clipboard instead of executing it
 -I:	Set interactive mode: shows the command and asks if you want to execute it
 -v:	Set verbose mode
 -D:	Set debug mode
 
 Install:
+	 gem install cmdline-sub
+or:
 	cd $HOME
 	git clone git@github.com:luke-gru/sub.git
 	cd sub
@@ -71,6 +74,8 @@ Install:
 	# INSTALL_PREFIX="/bin" sudo rake install
 
 Uninstall:
+	 gem uninstall cmdline-sub
+or:
 	cd $HOME/sub
 	sudo rake uninstall # removes /usr/local/bin/sub
 	# or

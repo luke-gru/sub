@@ -2,7 +2,7 @@
 # vim: set ft=ruby
 # frozen_string_literal: true
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 USAGE = <<EOF
 Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
@@ -46,6 +46,8 @@ EOF
 
 INSTALLATION = <<EOF
 Install:
+\t gem install cmdline-sub
+or:
 \tcd $HOME
 \tgit clone git@github.com:luke-gru/sub.git
 \tcd sub
@@ -56,6 +58,8 @@ EOF
 
 UNINSTALLATION = <<EOF
 Uninstall:
+\t gem uninstall cmdline-sub
+or:
 \tcd $HOME/sub
 \tsudo rake uninstall # removes /usr/local/bin/sub
 \t# or
@@ -86,7 +90,8 @@ FLAGS = [
   },
   nil, # separator
   # global flags
-  { flag: 'p', name: :print_only, desc: "Print the command instead of executing it" },
+  { flag: 'p', name: :print_only, desc: "Print the command instead of executing it (adds newline)" },
+  { flag: 'P', name: :print_only_no_newline, desc: "Print the command instead of executing it (doesn't add newline)" },
   { flag: 'c', name: :copy_to_clipboard, desc: "Copy the command to clipboard instead of executing it" },
   { flag: 'I', name: :interactive, desc: "Set interactive mode: shows the command and asks if you want to execute it" },
   { flag: 'v', name: :verbose, desc: "Set verbose mode" },
@@ -94,6 +99,7 @@ FLAGS = [
 ]
 GLOBAL_FLAGS_MAP = {
   print_only: 'p',
+  print_only_no_newline: 'P',
   copy_to_clipboard: 'c',
   interactive: 'I',
   verbose: 'v',
@@ -143,7 +149,7 @@ def parse_argv_and_sub_strs(argv)
     require "readline"
     line = Readline.readline "cmd: ", true
     ret_argv.replace line.strip.split(/\s+/)
-    line = Readline.readline "sub: ", true
+    line = Readline.readline "pat/sub[/options]: ", true
     sub_strs << line.strip
   else
     last_dashdash_idx = argv.rindex('--')
@@ -203,13 +209,7 @@ def parse_sub_strs(sub_strs)
   pats = []
   subs = []
   match_flags = []
-  global_flags = {
-    interactive: nil,
-    print_only: nil,
-    copy_to_clipboard: nil,
-    verbose: nil,
-    debug: nil,
-  }
+  global_flags = GLOBAL_FLAGS_MAP.transform_values { nil }
   raw_flags = []
   sub_strs.each_with_index do |sub_str, sub_i|
     # global flags at end of substitutions list, starts with /, ex: /o
@@ -244,6 +244,11 @@ def parse_sub_strs(sub_strs)
       flags.delete!(GLOBAL_FLAGS_MAP[:print_only])
     else
       global_flags[:print_only] = flag(flags, flag_by_name(:print_only))
+    end
+    if global_flags[:print_only_no_newline]
+      flags.delete!(GLOBAL_FLAGS_MAP[:print_only_no_newline])
+    else
+      global_flags[:print_only_no_newline] = flag(flags, flag_by_name(:print_only_no_newline))
     end
     if global_flags[:copy_to_clipboard]
       flags.delete!(GLOBAL_FLAGS_MAP[:copy_to_clipboard])
@@ -383,6 +388,8 @@ def exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
     copy!("", global_flags) if global_flags.fetch(:copy_to_clipboard)
     if global_flags.fetch(:print_only)
       puts ""
+    elsif global_flags.fetch(:print_only_no_newline)
+      print "" # does nothing
     else
       puts "Nothing to execute"
     end
@@ -400,12 +407,13 @@ def exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
       exit 1
     end
   end
-  if global_flags.fetch(:print_only) || !global_flags.fetch(:interactive)
-    $stdout.puts cmd_line
+  if global_flags.fetch(:print_only) || global_flags.fetch(:print_only_no_newline) || !global_flags.fetch(:interactive)
+    print_method = global_flags.fetch(:print_only_no_newline) ? :print : :puts
+    $stdout.send(print_method, cmd_line)
     $stdout.flush
   end
   copy!(cmd_line, global_flags) if global_flags.fetch(:copy_to_clipboard)
-  exit 0 if global_flags.fetch(:print_only) || global_flags.fetch(:copy_to_clipboard)
+  exit 0 if global_flags.fetch(:print_only) || global_flags.fetch(:print_only_no_newline) || global_flags.fetch(:copy_to_clipboard)
   begin
     exec cmd, *argv
   rescue SystemCallError => e

@@ -1,3 +1,8 @@
+PATH
+  remote: .
+  specs:
+    sub (0.1.0)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -23,9 +28,10 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  debug
-  minitest
-  rake
+  debug (~> 1.9.2)
+  minitest (~> 5.25.1)
+  rake (~> 13.2.1)
+  sub!
 
 BUNDLED WITH
    2.5.16
