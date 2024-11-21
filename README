@@ -62,6 +62,9 @@ Global flags:
 -I:	Set interactive mode: shows the command and asks if you want to execute it
 -v:	Set verbose mode
 -D:	Set debug mode
+Other flags:
+-h,--help:	Show help (-h shows short help, --help shows full)
+-v,--version:	Show version
 
 Install:
 	 gem install cmdline-sub

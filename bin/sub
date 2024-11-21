@@ -92,7 +92,7 @@ FLAGS = [
   { flag: 'e', name: :expand_star, desc: "Expand * in commandline after replacements are made",
     example: [ "sub ls mydir -- mydir/*/e #=> ls bin README" ]
   },
-  nil, # separator
+  :global, # separator
   # global flags
   { flag: 'p', name: :print_only, desc: "Print the command instead of executing it (adds newline)" },
   { flag: 'P', name: :print_only_no_newline, desc: "Print the command instead of executing it (doesn't add newline)" },
@@ -100,6 +100,9 @@ FLAGS = [
   { flag: 'I', name: :interactive, desc: "Set interactive mode: shows the command and asks if you want to execute it" },
   { flag: 'v', name: :verbose, desc: "Set verbose mode" },
   { flag: 'D', name: :debug, desc: "Set debug mode" },
+  :other, # separator
+  { flag: ['h', '--help'], name: :help, desc: "Show help (-h shows short help, --help shows full)", },
+  { flag: ['v', '--version'], name: :version, desc: "Show version" },
 ]
 GLOBAL_FLAGS_MAP = {
   print_only: 'p',
@@ -118,11 +121,15 @@ def print_help(full: true)
   output << "Flags:\n\n"
   output << "Substitution flags:\n"
   FLAGS.each do |fhash|
-    if fhash.nil?
+    if fhash == :global
       output << "Global flags:\n"
       next
+    elsif fhash == :other
+      output << "Other flags:\n"
+      next
     end
-    output << "-#{fhash[:flag]}:\t#{fhash[:desc]}\n"
+    flags = Array(fhash[:flag])
+    output << "-#{flags.join(',')}:\t#{fhash[:desc]}\n"
     if ex = fhash[:example]
       case ex
       when String
@@ -191,7 +198,7 @@ end
 
 def flag_by_name(name)
   FLAGS.each do |fhash|
-    next if fhash.nil?
+    next if Symbol === fhash
     if fhash[:name] == name
       return fhash[:flag]
     end

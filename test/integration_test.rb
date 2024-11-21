@@ -3,7 +3,7 @@ require "debug"
 require 'open3'
 
 class IntegrationTest < Minitest::Test
-  SUB_BIN = "./bin/sub"
+  SUB_BIN = File.expand_path(File.join(File.dirname(__FILE__), "..", "bin", "sub"))
   ENV["TESTING_SUB_CMD"] = "1"
 
   def test_sub_print_only
@@ -188,7 +188,7 @@ class IntegrationTest < Minitest::Test
 
   def can_paste_clipboard?
     if RUBY_PLATFORM =~ /darwin/i
-      system("which pbpaste >/dev/null 2>&1")
+      system("which pbpaste > /dev/null 2>&1")
       $?.exitstatus == 0
     elsif RUBY_PLATFORM =~ /linux/i
       system("which xclip > /dev/null 2>&1")
