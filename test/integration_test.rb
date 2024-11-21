@@ -1,13 +1,10 @@
 require "minitest/autorun"
-begin
-  require "debug"
-rescue LoadError
-  def debugger; end
-end
+require "debug"
 require 'open3'
 
 class IntegrationTest < Minitest::Test
   SUB_BIN = "./bin/sub"
+  ENV["TESTING_SUB_CMD"] = "1"
 
   def test_sub_print_only
     out, err, code = run_sub(["ls", "-al"], "l//p")
@@ -124,22 +121,33 @@ class IntegrationTest < Minitest::Test
     assert_match(/ls - l\n/, out)
   end
 
+  def test_copies_command_to_system_clipboard_c_option
+    skip "no clipboard to test" unless can_paste_clipboard?
+    out, err, code = run_sub(["ls", "-al"], "/c")
+    assert_equal "", err
+    assert_success code
+    assert_match(/ls -al\nCopied\n/, out)
+    assert_equal "ls -al", paste_clipboard
+  end
+
   private
 
-  # FIXME: allow debugger in subprocess
-  if ENV['DEBUG_SUB'] == '1'
-    # enable debugger to work
-    #def run_sub(cmdline, *subs)
-      #require "shellwords"
-      #args = cmdline.split(/\s+/)
-      #args << "--"
-      #subs.each do |sub|
-        #args << sub
-      #end
-      ##args.map! { |arg| "'#{arg}'" }
-      #out = `#{SUB_BIN} #{args.join(' ')}`
-      #[out, "", $?.exitstatus]
-    #end
+  if ENV['DEBUGGING_SUB_CMD'] == '1'
+    # enable debugger to work in subprocess
+    def run_sub(cmdline_argv, *subs)
+      args = cmdline_argv.dup
+      args << "--"
+      subs.each do |sub|
+        args << sub
+      end
+      cmd = "#{SUB_BIN} #{args.join(' ')}"
+      pid = fork do
+        exec cmd, out: :out, err: :err, in: :in
+      end
+      Process.waitpid(pid)
+      status = $?.exitstatus
+      ["", "", status]
+    end
   else
     def run_sub(cmdline_argv, *subs)
       args = cmdline_argv.dup
@@ -168,5 +176,23 @@ class IntegrationTest < Minitest::Test
 
   def refute_success code
     refute_equal 0, code
+  end
+
+  def can_paste_clipboard?
+    if RUBY_PLATFORM =~ /darwin/i
+      system("which pbpaste >/dev/null 2>&1")
+      $?.exitstatus == 0
+    elsif RUBY_PLATFORM =~ /linux/i
+      system("which xclip > /dev/null 2>&1")
+      $?.exitstatus == 0
+    end
+  end
+
+  def paste_clipboard
+    if RUBY_PLATFORM =~ /darwin/i
+      `pbpaste`
+    elsif RUBY_PLATFORM =~ /linux/i
+      `xclip -o -selection clipboard`
+    end
   end
 end

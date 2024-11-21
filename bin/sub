@@ -2,6 +2,10 @@
 # vim: set ft=ruby
 # frozen_string_literal: true
 
+if ENV["TESTING_SUB_CMD"] == "1"
+  require "debug"
+end
+
 VERSION = "0.1.1"
 
 USAGE = <<EOF
@@ -146,11 +150,8 @@ def parse_argv_and_sub_strs(argv)
   ret_argv = []
   sub_strs = []
   if argv.size == 0
-    require "readline"
-    line = Readline.readline "cmd: ", true
-    ret_argv.replace line.strip.split(/\s+/)
-    line = Readline.readline "pat/sub[/options]: ", true
-    sub_strs << line.strip
+    print_help(full: true)
+    exit 1
   else
     last_dashdash_idx = argv.rindex('--')
     argv.each_with_index do |arg, i|
