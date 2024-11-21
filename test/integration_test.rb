@@ -130,6 +130,14 @@ class IntegrationTest < Minitest::Test
     assert_equal "ls -al", paste_clipboard
   end
 
+  def test_backreferences_work_with_groupings
+    # ./bin/sub ls -al -- '(l)/hi\1hi/p'
+    out, err, code = run_sub(["ls", "-al"], "(l)/hi\\1hi/p")
+    assert_equal "", err
+    assert_success code
+    assert_match(/hilhis -ahilhi\n/, out)
+  end
+
   private
 
   if ENV['DEBUGGING_SUB_CMD'] == '1'
