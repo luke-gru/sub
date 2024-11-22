@@ -72,7 +72,7 @@ EOF
 
 LICENSE = "License: MIT"
 
-FLAGS = [
+SUB_FLAGS = [
   # per substitution flags
   { flag: 'f', name: :first_match, desc: "Substitute first matching word only.",
     example: "sub wget https://wget.com -- wget/curl/f #=> curl https://wget.com",
@@ -92,7 +92,8 @@ FLAGS = [
   { flag: 'e', name: :expand_star, desc: "Expand * in commandline after replacements are made",
     example: [ "sub ls mydir -- mydir/*/e #=> ls bin README" ]
   },
-  :global, # separator
+]
+GLOBAL_FLAGS = [
   # global flags
   { flag: 'p', name: :print_only, desc: "Print the command instead of executing it (adds newline)" },
   { flag: 'P', name: :print_only_no_newline, desc: "Print the command instead of executing it (doesn't add newline)" },
@@ -100,37 +101,25 @@ FLAGS = [
   { flag: 'I', name: :interactive, desc: "Set interactive mode: shows the command and asks if you want to execute it" },
   { flag: 'v', name: :verbose, desc: "Set verbose mode" },
   { flag: 'D', name: :debug, desc: "Set debug mode" },
-  :other, # separator
+]
+OTHER_FLAGS = [
   { flag: ['h', '--help'], name: :help, desc: "Show help (-h shows short help, --help shows full)", },
   { flag: ['v', '--version'], name: :version, desc: "Show version followed by a newline" },
 ]
-GLOBAL_FLAGS_MAP = {
-  print_only: 'p',
-  print_only_no_newline: 'P',
-  copy_to_clipboard: 'c',
-  interactive: 'I',
-  verbose: 'v',
-  debug: 'D',
-}
-GLOBAL_FLAGS = GLOBAL_FLAGS_MAP.values
+FLAGS = SUB_FLAGS + GLOBAL_FLAGS + OTHER_FLAGS
 FLAGS_BY_NAME = FLAGS.map do |f|
-  Symbol === f ? next : { f[:name] => f[:flag] }
-end.compact.inject(Hash.new) { |memo, h| memo.merge(h) }
+  { f[:name] => f[:flag] }
+end.inject(Hash.new) { |memo, h| memo.merge(h) }
+GLOBAL_FLAGS_BY_NAME = GLOBAL_FLAGS.map do |f|
+  { f[:name] => f[:flag] }
+end.inject(Hash.new) { |memo, h| memo.merge(h) }
+RAW_GLOBAL_FLAGS = GLOBAL_FLAGS_BY_NAME.values
 
 def print_help(full: true)
   output = String.new
   output << "sub v#{VERSION}" << "\n"
   output << USAGE << "\n"
-  output << "Flags:\n\n"
-  output << "Substitution flags:\n"
-  FLAGS.each do |fhash|
-    if fhash == :global
-      output << "Global flags:\n"
-      next
-    elsif fhash == :other
-      output << "Other flags:\n"
-      next
-    end
+  output_flag_info = lambda do |fhash|
     flags = Array(fhash[:flag])
     output << "-#{flags.join(',')}:\t#{fhash[:desc]}\n"
     if ex = fhash[:example]
@@ -144,6 +133,13 @@ def print_help(full: true)
       end
     end
   end
+  output << "Flags:\n\n"
+  output << "Substitution flags:\n"
+  SUB_FLAGS.each(&output_flag_info)
+  output << "Global flags:\n"
+  GLOBAL_FLAGS.each(&output_flag_info)
+  output << "Other flags:\n"
+  OTHER_FLAGS.each(&output_flag_info)
   if full
     output << "\n" << INSTALLATION
     output << "\n" << UNINSTALLATION
@@ -206,12 +202,12 @@ end
 def raw_global_flags?(raw_flags)
   raw_flags = raw_flags.strip
   return false if raw_flags.empty?
-  raw_flags.gsub(Regexp.new(GLOBAL_FLAGS.join('|')), '').empty?
+  raw_flags.gsub(Regexp.new(RAW_GLOBAL_FLAGS.join('|')), '').empty?
 end
 
 def parse_global_flag!(name, flags, global_flags)
   if global_flags[name]
-    flags.delete!(GLOBAL_FLAGS_MAP[name])
+    flags.delete!(GLOBAL_FLAGS_BY_NAME[name])
   else
     global_flags[name] = parse_simple_flag!(flags, flag_by_name(name))
   end
@@ -222,7 +218,7 @@ def parse_sub_strs(sub_strs)
   pats = []
   subs = []
   match_flags = []
-  global_flags = GLOBAL_FLAGS_MAP.transform_values { nil }
+  global_flags = GLOBAL_FLAGS_BY_NAME.transform_values { nil }
   raw_flags = []
   sub_strs.each_with_index do |sub_str, sub_i|
     # global flags at end of substitutions list, starts with /, ex: /o
