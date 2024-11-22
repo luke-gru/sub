@@ -2,7 +2,7 @@ Sub
 ===
 
 sub v0.1.1
-Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
+Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
 
 sub substitutes the matching pattern in every word in the command line with the
 substitution. Only the first matched pattern in the word is substituted unless
@@ -64,7 +64,7 @@ Global flags:
 -D:	Set debug mode
 Other flags:
 -h,--help:	Show help (-h shows short help, --help shows full)
--v,--version:	Show version
+-v,--version:	Show version followed by a newline
 
 Install:
 	 gem install cmdline-sub

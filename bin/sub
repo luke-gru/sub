@@ -9,7 +9,7 @@ end
 VERSION = "0.1.1"
 
 USAGE = <<EOF
-Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_OPTIONS])+ (/GLOBAL_OPTIONS)?
+Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
 
 sub substitutes the matching pattern in every word in the command line with the
 substitution. Only the first matched pattern in the word is substituted unless
@@ -261,7 +261,7 @@ end
 pats, subs, flags_hashes, raw_flags, global_flags = parse_sub_strs(sub_strs)
 
 if pats.empty? && flags_hashes.empty? && global_flags.empty?
-  $stderr.puts "Incorrect substitution, format is: pattern/substitution[/options]"
+  $stderr.puts "Incorrect substitution, format is: pattern/substitution[/flags]"
   exit 1
 end
 
