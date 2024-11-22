@@ -2,7 +2,7 @@
 # vim: set ft=ruby
 # frozen_string_literal: true
 
-if ENV["TESTING_SUB_CMD"] == "1"
+if ENV["TESTING_SUB_CMD"] == "1" && ENV["DEBUGGING_SUB_CMD"] == "1"
   require "debug"
 end
 
@@ -102,7 +102,7 @@ FLAGS = [
   { flag: 'D', name: :debug, desc: "Set debug mode" },
   :other, # separator
   { flag: ['h', '--help'], name: :help, desc: "Show help (-h shows short help, --help shows full)", },
-  { flag: ['v', '--version'], name: :version, desc: "Show version" },
+  { flag: ['v', '--version'], name: :version, desc: "Show version followed by a newline" },
 ]
 GLOBAL_FLAGS_MAP = {
   print_only: 'p',
@@ -113,6 +113,9 @@ GLOBAL_FLAGS_MAP = {
   debug: 'D',
 }
 GLOBAL_FLAGS = GLOBAL_FLAGS_MAP.values
+FLAGS_BY_NAME = FLAGS.map do |f|
+  Symbol === f ? next : { f[:name] => f[:flag] }
+end.compact.inject(Hash.new) { |memo, h| memo.merge(h) }
 
 def print_help(full: true)
   output = String.new
@@ -190,26 +193,28 @@ end
 
 argv, sub_strs = parse_argv_and_sub_strs(ARGV)
 
-def flag(flags_str, char)
+def parse_simple_flag!(flags_str, char)
   flag = flags_str.include?(char)
   flags_str.delete!(char)
   flag
 end
 
 def flag_by_name(name)
-  FLAGS.each do |fhash|
-    next if Symbol === fhash
-    if fhash[:name] == name
-      return fhash[:flag]
-    end
-  end
-  raise ArgumentError, "bad flag: #{name}"
+  FLAGS_BY_NAME.fetch(name)
 end
 
-def raw_global_options?(raw_flags)
+def raw_global_flags?(raw_flags)
   raw_flags = raw_flags.strip
   return false if raw_flags.empty?
   raw_flags.gsub(Regexp.new(GLOBAL_FLAGS.join('|')), '').empty?
+end
+
+def parse_global_flag!(name, flags, global_flags)
+  if global_flags[name]
+    flags.delete!(GLOBAL_FLAGS_MAP[name])
+  else
+    global_flags[name] = parse_simple_flag!(flags, flag_by_name(name))
+  end
 end
 
 def parse_sub_strs(sub_strs)
@@ -221,7 +226,7 @@ def parse_sub_strs(sub_strs)
   raw_flags = []
   sub_strs.each_with_index do |sub_str, sub_i|
     # global flags at end of substitutions list, starts with /, ex: /o
-    if sub_strs[sub_i+1].nil? && sub_str[0] == '/' && raw_global_options?(sub_str[1..-1])
+    if sub_strs[sub_i+1].nil? && sub_str[0] == '/' && raw_global_flags?(sub_str[1..-1])
       flags = sub_str[1..-1]
     else
       pat, sub, flags = sub_str.split(/(?<!\\)\//)
@@ -231,48 +236,24 @@ def parse_sub_strs(sub_strs)
       flags.strip!
       raw_flags << flags.dup
       flags_hash = {
-        first_match: flag(flags, flag_by_name(:first_match)),
-        last_match: flag(flags, flag_by_name(:last_match)),
-        expand_star: flag(flags, flag_by_name(:expand_star)),
-        literal: flag(flags, flag_by_name(:literal)),
-        ignorecase: flag(flags, flag_by_name(:ignorecase)),
-        general: flag(flags, flag_by_name(:general)),
+        first_match: parse_simple_flag!(flags, flag_by_name(:first_match)),
+        last_match: parse_simple_flag!(flags, flag_by_name(:last_match)),
+        expand_star: parse_simple_flag!(flags, flag_by_name(:expand_star)),
+        literal: parse_simple_flag!(flags, flag_by_name(:literal)),
+        ignorecase: parse_simple_flag!(flags, flag_by_name(:ignorecase)),
+        general: parse_simple_flag!(flags, flag_by_name(:general)),
       }
       pats << pat
       subs << sub
       match_flags << flags_hash
     end
 
-    if global_flags[:interactive]
-      flags.delete!(GLOBAL_FLAGS_MAP[:interactive])
-    else
-      global_flags[:interactive] = flag(flags, flag_by_name(:interactive)) || ARGV.size == 0
-    end
-    if global_flags[:print_only]
-      flags.delete!(GLOBAL_FLAGS_MAP[:print_only])
-    else
-      global_flags[:print_only] = flag(flags, flag_by_name(:print_only))
-    end
-    if global_flags[:print_only_no_newline]
-      flags.delete!(GLOBAL_FLAGS_MAP[:print_only_no_newline])
-    else
-      global_flags[:print_only_no_newline] = flag(flags, flag_by_name(:print_only_no_newline))
-    end
-    if global_flags[:copy_to_clipboard]
-      flags.delete!(GLOBAL_FLAGS_MAP[:copy_to_clipboard])
-    else
-      global_flags[:copy_to_clipboard] = flag(flags, flag_by_name(:copy_to_clipboard))
-    end
-    if global_flags[:verbose]
-      flags.delete!(GLOBAL_FLAGS_MAP[:verbose])
-    else
-      global_flags[:verbose] = flag(flags, flag_by_name(:verbose))
-    end
-    if global_flags[:debug]
-      flags.delete!(GLOBAL_FLAGS_MAP[:debug])
-    else
-      global_flags[:debug] = flag(flags, flag_by_name(:debug))
-    end
+    parse_global_flag!(:interactive, flags, global_flags)
+    parse_global_flag!(:print_only, flags, global_flags)
+    parse_global_flag!(:print_only_no_newline, flags, global_flags)
+    parse_global_flag!(:copy_to_clipboard, flags, global_flags)
+    parse_global_flag!(:verbose, flags, global_flags)
+    parse_global_flag!(:debug, flags, global_flags)
     unless flags.empty?
       $stderr.puts "Warning: unknown flag#{'s' if flags.size != 1}: #{flags}"
     end
