@@ -37,7 +37,7 @@ class IntegrationTest < Minitest::Test
   def test_sub_command_doesnt_exist
     out, err, code = run_sub(["ls",  "-al"], "l/xxx/")
     assert_equal "xxxs -axxx\n", out
-    assert_match(/xxxs: command not found/, err)
+    assert_equal("xxxs: command not found\n", err)
     refute_success code
   end
 
@@ -50,28 +50,29 @@ class IntegrationTest < Minitest::Test
 
   def test_sub_last_matching_word_only_l_option
     out, err, code = run_sub(["ls", "-al"], "l//l")
-    assert_match(/ls -a\n/, out)
+    expected = `ls -a`
+    assert_equal("ls -a\n" + expected, out)
     assert_equal "", err
     assert_success code
   end
 
   def test_sub_interpret_wildcards_in_pattern_as_literals_L_option
     out, err, code = run_sub(["cp", "here.txt", "there.txt"], "./_/Lp")
-    assert_match(/cp here_txt there_txt\n/, out)
+    assert_equal("cp here_txt there_txt\n", out)
     assert_equal "", err
     assert_success code
   end
 
   def test_sub_pattern_ignorecase_i_option
     out, err, code = run_sub(["cp", "here.txt", "there.txt"], "CP/mv/ip")
-    assert_match(/mv here.txt there.txt\n/, out)
+    assert_equal("mv here.txt there.txt\n", out)
     assert_equal "", err
     assert_success code
   end
 
   def test_sub_general_substitution_g_option
     out, err, code = run_sub(["cp", "here.txt", "there.txt"], "./_/gp")
-    assert_match(/__ ________ _________\n/, out)
+    assert_equal("__ ________ _________\n", out)
     assert_equal "", err
     assert_success code
   end
@@ -85,57 +86,88 @@ class IntegrationTest < Minitest::Test
 
   def test_multiple_substitutions_run_one_after_another
     out, err, code = run_sub(["ls", "-al"], "l/HI/", "hi/HEY/ip")
-    assert_match(/HEYs -aHEY\n/, out)
+    assert_equal("HEYs -aHEY\n", out)
     assert_equal "", err
     assert_success code
   end
 
   def test_global_options_can_be_given_after_substitutions
     out, err, code = run_sub(["ls", "-al"], "l//", "/p")
-    assert_match(/s -a\n/, out)
+    assert_equal("s -a\n", out)
     assert_equal "", err
     assert_success code
   end
 
   def test_patterns_can_escape_backslash
-    # ./bin/sub ls / -- '\//hi /p'
+    # sub ls / -- '\//hi /p'
     out, err, code = run_sub(["ls", "/"], "\\//hi", "/p")
     assert_equal "", err
     assert_success code
-    assert_match(/ls hi\n/, out)
+    assert_equal("ls hi\n", out)
   end
 
   def test_pattern_can_match_space_character
-    # ./bin/sub ls '-al ' -- ' /hi' /p
+    # sub ls '-al ' -- ' /hi' /p
     out, err, code = run_sub(["ls", "-al "], " /hi/", "/p")
     assert_equal "", err
     assert_success code
-    assert_match(/ls -alhi\n/, out)
+    assert_equal("ls -alhi\n", out)
   end
 
   def test_can_have_space_character_in_substitution
-    # ./bin/sub ls -al -- 'a/ ' /p
+    # sub ls -al -- 'a/ ' /p
     out, err, code = run_sub(["ls", "-al"], "a/ ", "/p")
     assert_equal "", err
     assert_success code
-    assert_match(/ls - l\n/, out)
+    assert_equal("ls - l\n", out)
   end
 
   def test_copies_command_to_system_clipboard_c_option
     skip "no clipboard to test" unless can_paste_clipboard?
-    out, err, code = run_sub(["ls", "-al"], "/c")
-    assert_equal "", err
-    assert_success code
-    assert_match(/ls -al\nCopied\n/, out)
-    assert_equal "ls -al", paste_clipboard
+    change_system_clipboard do
+      out, err, code = run_sub(["ls", "-al"], "/c")
+      assert_equal "", err
+      assert_success code
+      assert_equal("ls -al\nCopied\n", out)
+      assert_equal "ls -al", paste_clipboard
+    end
   end
 
   def test_backreferences_work_with_groupings
-    # ./bin/sub ls -al -- '(l)/hi\1hi/p'
+    # sub ls -al -- '(l)/hi\1hi/p'
     out, err, code = run_sub(["ls", "-al"], "(l)/hi\\1hi/p")
     assert_equal "", err
     assert_success code
-    assert_match(/hilhis -ahilhi\n/, out)
+    assert_equal("hilhis -ahilhi\n", out)
+  end
+
+  def test_command_with_double_dash_still_works
+    # sub ls -al -- dir -- -al/-a/p
+    out, err, code = run_sub(["ls", "-al", "--", "dir"], "-al/-a/p")
+    assert_equal "", err
+    assert_success code
+    assert_equal("ls -a -- dir\n", out)
+  end
+
+  INTERACTIVE_PROMPT = <<EOF
+Would you like to execute the following command? [y(es),n(o)]
+EOF
+
+  def test_interactive_mode_dont_execute
+    code = run_sub(["ls", "-al"], "-al/-a/I") do |stdin, stdout, _stderr|
+      assert_equal INTERACTIVE_PROMPT + "ls -a\n", read_from_subprocess_io(stdout)
+      stdin.puts "no"
+    end
+    assert_equal 1, code
+  end
+
+  def test_interactive_mode_execute
+    code = run_sub(["ls", "-al"], "-al/-a/I") do |stdin, stdout, _stderr|
+      assert_equal INTERACTIVE_PROMPT + "ls -a\n", read_from_subprocess_io(stdout)
+      stdin.puts "y"
+      assert_equal `ls -a`, read_from_subprocess_io(stdout)
+    end
+    assert_equal 0, code
   end
 
   private
@@ -152,9 +184,15 @@ class IntegrationTest < Minitest::Test
       pid = fork do
         exec cmd, out: :out, err: :err, in: :in
       end
-      Process.waitpid(pid)
-      status = $?.exitstatus
-      ["", "", status]
+      if block_given?
+        yield $stdin, $stdout, $stderr
+        Process.waitpid(pid)
+        $?.exitstatus
+      else
+        Process.waitpid(pid)
+        status = $?.exitstatus
+        ["", "", status]
+      end
     end
   else
     def run_sub(cmdline_argv, *subs)
@@ -166,7 +204,7 @@ class IntegrationTest < Minitest::Test
       stdin, stdout, stderr, wait_thr = Open3.popen3(SUB_BIN, *args)
       if block_given?
         yield stdin, stdout, stderr
-        return wait_thr.value
+        return wait_thr.value.exitstatus
       end
       out = stdout.read
       err = stderr.read
@@ -201,6 +239,39 @@ class IntegrationTest < Minitest::Test
       `pbpaste`
     elsif RUBY_PLATFORM =~ /linux/i
       `xclip -o -selection clipboard`
+    end
+  end
+
+  def set_clipboard(contents)
+    Tempfile.create("clipboard") do |f|
+      f.write contents
+      f.flush
+      if RUBY_PLATFORM =~ /darwin/i
+        system("cat #{f.path} | pbcopy")
+      elsif RUBY_PLATFORM =~ /linux/i
+        system("xclip -selection clipboard < #{f.path}")
+      end
+    end
+  end
+
+  def change_system_clipboard
+    old_clipboard = paste_clipboard
+    yield # changes clipboard
+  ensure
+    set_clipboard(old_clipboard)
+  end
+
+  def read_from_subprocess_io(io, max: 1024, max_retries: 100)
+    begin
+      io.read_nonblock(max)
+    rescue IO::EAGAINWaitReadable # Would block. if using popen3 it could mean the thread hasn't run
+      sleep 0.01
+      max_retries -= 1
+      if max_retries > 0
+        retry
+      else
+        raise
+      end
     end
   end
 end

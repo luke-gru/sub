@@ -387,6 +387,7 @@ def exec_cmd(argv, regexps, subs, raw_flags, num_replacements, global_flags)
   if global_flags.fetch(:interactive) && !global_flags.fetch(:print_only)
     $stdout.puts "Would you like to #{action} the following command? [y(es),n(o)]"
     $stdout.puts cmd_line
+    $stdout.flush
     ans = $stdin.gets().strip
     if ans !~ /y(es)?/i # treat as no
       exit 1
