@@ -6,7 +6,7 @@ if ENV["TESTING_SUB_CMD"] == "1" && ENV["DEBUGGING_SUB_CMD"] == "1"
   require "debug"
 end
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 USAGE = <<EOF
 Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?

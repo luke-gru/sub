@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.platform    = Gem::Platform::RUBY
   s.name        = 'cmdline-sub'
-  s.version     = '0.1.1'
+  s.version     = '0.1.2'
   s.summary     = 'Sub is a commandline substitution editor'
   s.description = <<desc
 sub substitutes the matching pattern in every word in the command line with the
