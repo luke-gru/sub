@@ -3,7 +3,7 @@ require "debug"
 require 'open3'
 
 class IntegrationTest < Minitest::Test
-  SUB_BIN = File.expand_path(File.join(File.dirname(__FILE__), "..", "bin", "sub"))
+  SUB_BIN = File.expand_path("#{__dir__}/../bin/sub")
   ENV["TESTING_SUB_CMD"] = "1"
 
   def test_sub_print_only
@@ -211,7 +211,7 @@ EOF
       stderr.close
       stdin.close
       stdout.close
-      exit_code = wait_thr.value
+      exit_code = wait_thr.value.exitstatus
       [out, err, exit_code]
     end
   end

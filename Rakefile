@@ -57,6 +57,7 @@ end
 
 desc "Uninstall (removes /usr/local/bin/sub or $(INSTALL_PREFIX)/sub). Use sudo if necessary."
 task :uninstall do
+  require "fileutils"
   install_dir = ENV["INSTALL_PREFIX"] || "/usr/local/bin"
   unless File.directory?(install_dir)
     $stderr.puts "Directory #{install_dir} does not exist. Uninstall failed."
