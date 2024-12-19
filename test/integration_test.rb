@@ -114,9 +114,9 @@ class IntegrationTest < Minitest::Test
     assert_equal("ls -alhi\n", out)
   end
 
-  def test_can_have_space_character_in_substitution
+  def test_can_have_space_character_in_substitution_in_raw_mode
     # sub ls -al -- 'a/ ' /p
-    out, err, code = run_sub(["ls", "-al"], "a/ ", "/p")
+    out, err, code = run_sub(["ls", "-al"], "a/ /r", "/p")
     assert_equal "", err
     assert_success code
     assert_equal("ls - l\n", out)

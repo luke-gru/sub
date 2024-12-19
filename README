@@ -1,7 +1,7 @@
 Sub
 ===
 
-sub v0.1.2
+sub v0.1.3
 Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
 
 sub substitutes the matching pattern in every word in the command line with the
@@ -53,8 +53,8 @@ Substitution flags:
   	  ex: sub cp here.txt there.txt -- CP/mv/i #=> mv here.txt there.txt
 -g:	General substitution: substitute all matches in the word, not just the first
   	  ex: sub cp here.txt there.txt -- ./_/g #=> __ ________ _________
--e:	Expand * in commandline after replacements are made
-  	  ex: sub ls mydir -- mydir/*/e #=> ls bin README
+-r:	Don't escape substituted value, allow shell to expand and split it
+  	  ex: sub ls mydir -- 'mydir/*/r' #=> ls bin README
 Global flags:
 -p:	Print the command instead of executing it (adds newline)
 -P:	Print the command instead of executing it (doesn't add newline)
