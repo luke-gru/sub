@@ -10,7 +10,7 @@ require "shellwords"
 VERSION = "0.1.3"
 
 USAGE = <<EOF
-Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
+Usage: sub [-GLOBAL_FLAGS] COMMAND LINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
 
 sub substitutes the matching pattern in every word in the command line with the
 substitution. Only the first matched pattern in the word is substituted unless
@@ -44,8 +44,16 @@ Multiple substitutions:
 Global flags:
   Global flags can be given as the last argument:
 
-  ex: sub find . | grep '.txt' -- txt/md /p
+  ex: sub find . '|' grep '.txt' -- txt/md /p
   In this example, the print flag is given as a final argument.
+  Note that the pipe character must be quoted, or else the shell interprets the
+  command differently that what you would expect.
+
+  Alternatively, global flags can be given as regular options to sub so that you can
+  define aliases in your shell's rcfile with any options you want:
+
+  ex: sub -p find . '|' grep '.txt' -- txt/md
+
   See flags information below.
 EOF
 
@@ -90,8 +98,9 @@ SUB_FLAGS = [
   { flag: 'g', name: :general, desc: "General substitution: substitute all matches in the word, not just the first",
     example: "sub cp here.txt there.txt -- ./_/g #=> __ ________ _________",
   },
-  { flag: 'r', name: :raw_mode, desc: "Don't escape substituted value, allow shell to expand and split it",
-    example: [ "sub ls mydir -- 'mydir/*/r' #=> ls bin README" ]
+  { flag: 'r', name: :raw_mode, desc: "Raw mode: don't escape substituted value, allow shell to expand and split it",
+    example: [ "sub ls mydir -- 'mydir/*/r' #=> ls bin README\n  \t  Notice how the substitution pattern is quoted to avoid " \
+    "expansion by\n  \t  the initial shell." ]
   },
 ]
 GLOBAL_FLAGS = [
@@ -99,9 +108,10 @@ GLOBAL_FLAGS = [
   { flag: 'p', name: :print_only, desc: "Print the command instead of executing it (adds newline)" },
   { flag: 'P', name: :print_only_no_newline, desc: "Print the command instead of executing it (doesn't add newline)" },
   { flag: 'c', name: :copy_to_clipboard, desc: "Copy the command to clipboard instead of executing it" },
+  { flag: 'x', name: :alias_expansion, desc: "Attempt to expand the command to its alias, if it is one" },
   { flag: 'I', name: :interactive, desc: "Set interactive mode: shows the command and asks if you want to execute it" },
-  { flag: 'v', name: :verbose, desc: "Set verbose mode" },
-  { flag: 'D', name: :debug, desc: "Set debug mode" },
+  { flag: 'V', name: :verbose, desc: "Set verbose mode" },
+  { flag: 'D', name: :debug, desc: "Set debug mode (for developers)" },
 ]
 OTHER_FLAGS = [
   { flag: ['h', '--help'], name: :help, desc: "Show help (-h shows short help, --help shows full)", },
@@ -112,6 +122,9 @@ FLAGS_BY_NAME = FLAGS.map do |f|
   { f[:name] => f[:flag] }
 end.inject(Hash.new) { |memo, h| memo.merge(h) }
 GLOBAL_FLAGS_BY_NAME = GLOBAL_FLAGS.map do |f|
+  { f[:name] => f[:flag] }
+end.inject(Hash.new) { |memo, h| memo.merge(h) }
+OTHER_FLAGS_BY_NAME = OTHER_FLAGS.map do |f|
   { f[:name] => f[:flag] }
 end.inject(Hash.new) { |memo, h| memo.merge(h) }
 RAW_GLOBAL_FLAGS = GLOBAL_FLAGS_BY_NAME.values
@@ -153,47 +166,26 @@ def print_version
   $stdout.puts VERSION
 end
 
-def parse_argv_and_sub_strs(argv)
-  ret_argv = []
-  sub_strs = []
-  if argv.size == 0
-    print_help(full: true)
-    exit 1
-  else
-    last_dashdash_idx = argv.rindex('--')
-    argv.each_with_index do |arg, i|
-      if arg == '--' && i == last_dashdash_idx
-        j = i+1
-        while sub_str = argv[j]
-          sub_strs << sub_str
-          j += 1
-        end
-        break
-      else
-        ret_argv << arg
-      end
-    end
-  end
-  if sub_strs.empty?
-    cmd = ret_argv.shift
-    if cmd == "--help" || cmd == "-h"
-      print_help(full: cmd == "--help")
-      exit 0
-    elsif cmd == "--version" || cmd == "-v"
-      print_version
-      exit 0
-    end
-    exec cmd, *ret_argv
-  end
-  [ret_argv, sub_strs]
-end
-
-argv, sub_strs = parse_argv_and_sub_strs(ARGV)
-
 def parse_simple_flag!(flags_str, char)
   flag = flags_str.include?(char)
   flags_str.delete!(char)
   flag
+end
+
+def parse_complex_flag!(flags_str, array)
+  array.reverse_each do |flag| # try --version before -v
+    if flag.start_with?("--")
+      flag_without_leading_dash = flag[1..-1]
+    else
+      flag_without_leading_dash = flag
+    end
+    is_included = flags_str.include?(flag_without_leading_dash)
+    flags_str.delete!(flag_without_leading_dash) if is_included
+    if is_included
+      return flag.start_with?("--") ? 2 : 1
+    end
+  end
+  false
 end
 
 def flag_by_name(name)
@@ -214,19 +206,106 @@ def parse_global_flag!(name, flags, global_flags)
   end
 end
 
-def parse_sub_strs(sub_strs)
+def parse_global_flags!(flags, global_flags)
+  parse_global_flag!(:interactive, flags, global_flags)
+  parse_global_flag!(:print_only, flags, global_flags)
+  parse_global_flag!(:print_only_no_newline, flags, global_flags)
+  parse_global_flag!(:copy_to_clipboard, flags, global_flags)
+  parse_global_flag!(:alias_expansion, flags, global_flags)
+  parse_global_flag!(:verbose, flags, global_flags)
+  parse_global_flag!(:debug, flags, global_flags)
+end
+
+def parse_other_flag!(name, flags, other_flags)
+  if other_flags[name]
+    flags.delete!(OTHER_FLAGS_BY_NAME[name])
+  else
+    other_flags[name] = parse_complex_flag!(flags, flag_by_name(name))
+  end
+end
+
+def parse_other_flags!(flags, other_flags)
+  parse_other_flag!(:help, flags, other_flags)
+  parse_other_flag!(:version, flags, other_flags)
+end
+
+def parse_argv_and_sub_strs(argv, global_flags)
+  command_and_args = []
+  sub_strs = []
+  other_flags = {}
+  if argv.size == 0
+    print_help(full: true)
+    exit 1
+  else
+    last_dashdash_idx = argv.rindex('--')
+    end_of_sub_options = false
+    invalid_global_flags = []
+    argv.each_with_index do |arg, i|
+      if arg == '--' && i == last_dashdash_idx
+        j = i+1
+        while sub_str = argv[j]
+          sub_strs << sub_str
+          j += 1
+        end
+        break
+      else
+        unless end_of_sub_options
+          if arg.start_with?("-")
+            arg = arg[1..-1]
+            parse_other_flags!(arg, other_flags)
+            parse_global_flags!(arg, global_flags)
+            unless arg.empty?
+              invalid_global_flags << arg
+            end
+            next
+          else
+            end_of_sub_options = true
+          end
+        end
+        command_and_args << arg
+      end
+    end
+  end
+
+  if invalid_global_flags.any?
+    invalid = invalid_global_flags.join.chars.uniq
+    $stderr.puts "Invalid global flag#{invalid.size > 1 ? 's' : ''}: #{invalid.join('')}, ignoring it"
+  end
+
+  if other_flags[:help]
+    print_help(full: other_flags[:help] > 1)
+    exit 0
+  elsif other_flags[:version]
+    print_version
+    exit 0
+  end
+
+  if sub_strs.empty?
+    cmd = command_and_args.shift
+    if cmd.nil?
+      $stderr.puts "Need command to run, aborting"
+      exit 1
+    end
+    exec cmd, *command_and_args
+  end
+  [command_and_args, sub_strs]
+end
+
+global_flags = GLOBAL_FLAGS_BY_NAME.transform_values { nil }
+argv, sub_strs = parse_argv_and_sub_strs(ARGV, global_flags)
+
+def parse_sub_strs(sub_strs, global_flags)
   ret = []
   pats = []
   subs = []
   match_flags = []
-  global_flags = GLOBAL_FLAGS_BY_NAME.transform_values { nil }
   raw_flags = []
   sub_strs.each_with_index do |sub_str, sub_i|
     # global flags at end of substitutions list, starts with /, ex: /o
     if sub_strs[sub_i+1].nil? && sub_str[0] == '/' && raw_global_flags?(sub_str[1..-1])
       flags = sub_str[1..-1]
     else
-      pat, sub, flags = sub_str.split(/(?<!\\)\//)
+      pat, sub, flags = sub_str.split(/(?<!\\)\//) # split on unescaped '/' character
       pat = pat.to_s.dup
       sub = sub.to_s.dup
       flags = flags.to_s.dup
@@ -248,21 +327,17 @@ def parse_sub_strs(sub_strs)
       match_flags << flags_hash
     end
 
-    parse_global_flag!(:interactive, flags, global_flags)
-    parse_global_flag!(:print_only, flags, global_flags)
-    parse_global_flag!(:print_only_no_newline, flags, global_flags)
-    parse_global_flag!(:copy_to_clipboard, flags, global_flags)
-    parse_global_flag!(:verbose, flags, global_flags)
-    parse_global_flag!(:debug, flags, global_flags)
+    parse_global_flags!(flags, global_flags)
+
     unless flags.empty?
       $stderr.puts "Warning: unknown flag#{'s' if flags.size != 1}: #{flags}"
     end
   end
 
-  ret << pats << subs << match_flags << raw_flags << global_flags
+  ret << pats << subs << match_flags << raw_flags
 end
 
-pats, subs, flags_hashes, raw_flags, global_flags = parse_sub_strs(sub_strs)
+pats, subs, flags_hashes, raw_flags = parse_sub_strs(sub_strs, global_flags)
 
 if pats.empty? && flags_hashes.empty? && global_flags.empty?
   $stderr.puts "Incorrect substitution, format is: pattern/substitution[/flags]"
@@ -308,7 +383,7 @@ def argv_replace!(argv, regexps, subs, flags)
             scan_size = 1 if scan_size > 1
           end
           if flags[i].fetch(:raw_mode)
-            flags[i][:raw_mode] |= i+1
+            flags[i][:raw_mode] |= 2**i
           end
           if new_arg != arg || new_arg == subs[i]
             num_replacements += scan_size
@@ -391,8 +466,10 @@ def exec_cmd(argv, regexps, subs, flags_hashes, raw_flags, global_flags, num_rep
   cmd = argv.shift
   argv_string = String.new
   argv.each_with_index do |arg, i|
-    raw_mode = flags_hashes.any? { |flags_hash| flags_hash[:raw_mode] && (flags_hash[:raw_mode] & i+1) != 0 }
-    if raw_mode
+    raw_mode = flags_hashes.any? { |flags_hash| flags_hash[:raw_mode] && (flags_hash[:raw_mode] & (2**i) != 0) }
+    # TODO: find out if the '|' was given from the cmdline or if it was the result of a substitution. If it was
+    # a substitution, then escape it unless raw mode given.
+    if raw_mode || arg == '|'
       argv_string << arg
     else
       argv_string << Shellwords.escape(arg)
@@ -401,6 +478,34 @@ def exec_cmd(argv, regexps, subs, flags_hashes, raw_flags, global_flags, num_rep
       argv_string << " "
     end
   end
+
+  if global_flags.fetch(:alias_expansion)
+    # Look to see if `cmd` is an alias. To do so we guess that the alias is either in
+    # .bashrc or .zshrc if the shell if zsh or bash, which of course won't always work.
+    # We then use the `type` shell builtin and parse the output to see if it's an alias.
+    shell = ENV['SHELL'].to_s
+    dotfile = nil
+    if shell =~ /zsh/
+      dotfile = File.join(ENV["HOME"],  ".zshrc")
+      dotfile = nil unless File.exist?(dotfile)
+    elsif shell =~ /bash/
+      dotfile = File.join(ENV["HOME"], ".bashrc")
+      dotfile = nil unless File.exist?(dotfile)
+    end
+    if dotfile && File.readable?(dotfile)
+      # this could take some time as some rcfiles are big and do lots of stuff
+      type_output = `#{shell} -c 'source #{Shellwords.escape(dotfile)}; type #{cmd}' 2>/dev/null`
+      alias_expansion = nil
+      if $?.success?
+        # I'm unsure which versions of zsh and bash are supported by these regexes
+        if type_output =~ /is aliased to [`'](.+?)[`']/ || type_output =~ /alias for (.+?)$/
+          alias_expansion = $1
+        end
+      end
+      cmd = alias_expansion if alias_expansion
+    end
+  end
+
   cmd_line = "#{cmd} #{argv_string}"
   action = global_flags.fetch(:copy_to_clipboard) ? "copy" : "execute"
   if global_flags.fetch(:interactive) && !global_flags.fetch(:print_only)

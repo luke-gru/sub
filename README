@@ -2,7 +2,7 @@ Sub
 ===
 
 sub v0.1.3
-Usage: sub COMMANDLINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
+Usage: sub [-GLOBAL_FLAGS] COMMAND LINE -- (PATTERN/SUBSTITUTION[/SUB_FLAGS])+ (/GLOBAL_FLAGS)?
 
 sub substitutes the matching pattern in every word in the command line with the
 substitution. Only the first matched pattern in the word is substituted unless
@@ -36,8 +36,16 @@ Multiple substitutions:
 Global flags:
   Global flags can be given as the last argument:
 
-  ex: sub find . | grep '.txt' -- txt/md /p
+  ex: sub find . '|' grep '.txt' -- txt/md /p
   In this example, the print flag is given as a final argument.
+  Note that the pipe character must be quoted, or else the shell interprets the
+  command differently that what you would expect.
+
+  Alternatively, global flags can be given as regular options to sub so that you can
+  define aliases in your shell's rcfile with any options you want:
+
+  ex: sub -p find . '|' grep '.txt' -- txt/md
+
   See flags information below.
 
 Flags:
@@ -53,15 +61,18 @@ Substitution flags:
   	  ex: sub cp here.txt there.txt -- CP/mv/i #=> mv here.txt there.txt
 -g:	General substitution: substitute all matches in the word, not just the first
   	  ex: sub cp here.txt there.txt -- ./_/g #=> __ ________ _________
--r:	Don't escape substituted value, allow shell to expand and split it
+-r:	Raw mode: don't escape substituted value, allow shell to expand and split it
   	  ex: sub ls mydir -- 'mydir/*/r' #=> ls bin README
+  	  Notice how the substitution pattern is quoted to avoid expansion by
+  	  the initial shell.
 Global flags:
 -p:	Print the command instead of executing it (adds newline)
 -P:	Print the command instead of executing it (doesn't add newline)
 -c:	Copy the command to clipboard instead of executing it
+-x:	Attempt to expand the command to its alias, if it is one
 -I:	Set interactive mode: shows the command and asks if you want to execute it
--v:	Set verbose mode
--D:	Set debug mode
+-V:	Set verbose mode
+-D:	Set debug mode (for developers)
 Other flags:
 -h,--help:	Show help (-h shows short help, --help shows full)
 -v,--version:	Show version followed by a newline
